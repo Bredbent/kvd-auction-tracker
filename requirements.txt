@@ -1,0 +1,16 @@
+fastapi==0.109.1
+uvicorn==0.27.0
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+aiohttp==3.9.3
+beautifulsoup4==4.12.2
+pydantic==2.6.0
+pydantic-settings==2.1.0
+redis==5.0.1
+apscheduler==3.10.4 
+selenium==4.16.0
+python-dotenv==1.0.0
+scipy==1.12.0
+webdriver_manager==4.0.1
+pandas==2.2.0
+pyarrow==14.0.1

@@ -1,0 +1,307 @@
+# Local Docker Development Setup - KVD Auction Tracker
+For Apple Silicon (M2) MacBook Air
+
+## 1. Prerequisites
+
+1. **Install Docker Desktop for Apple Silicon**
+   ```bash
+   # Install via Homebrew
+   brew install --cask docker
+   ```
+   - Open Docker Desktop after installation
+   - Ensure Docker Desktop is running (check menu bar icon)
+
+2. **Create Project Directory**
+   ```bash
+   mkdir kvd-auction-tracker
+   cd kvd-auction-tracker
+   ```
+
+## 2. Create Project Files
+
+1. **Create Directory Structure**
+   ```bash
+   mkdir -p api scraper shared logs
+   touch api/__init__.py scraper/__init__.py shared/__init__.py
+   ```
+
+2. **Create Environment File**
+   ```bash
+   cat > .env << EOL
+   POSTGRES_USER=kvd_user
+   POSTGRES_PASSWORD=devpassword123
+   POSTGRES_DB=kvd_auctions
+   REDIS_PASSWORD=devredis123
+   EOL
+   ```
+
+3. **Copy Backend Files**
+   - Copy all previously provided Python files to their respective directories:
+     - `shared/config.py`
+     - `shared/database.py`
+     - `api/main.py`
+     - `api/schemas.py`
+     - `scraper/kvd_scraper.py`
+     - `scraper/scraper_schedule.py`
+
+4. **Create Docker Compose File**
+   ```bash
+   cat > docker-compose.yml << EOL
+   version: '3.8'
+
+   services:
+     api:
+       build:
+         context: .
+         dockerfile: Dockerfile.api
+       ports:
+         - "8000:8000"
+       environment:
+         - POSTGRES_USER=\${POSTGRES_USER}
+         - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD}
+         - POSTGRES_HOST=postgres
+         - POSTGRES_DB=\${POSTGRES_DB}
+         - REDIS_HOST=redis
+       volumes:
+         - ./logs:/app/logs
+       depends_on:
+         - postgres
+         - redis
+       platform: linux/arm64
+
+     scraper:
+       build:
+         context: .
+         dockerfile: Dockerfile.scraper
+       environment:
+         - POSTGRES_USER=\${POSTGRES_USER}
+         - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD}
+         - POSTGRES_HOST=postgres
+         - POSTGRES_DB=\${POSTGRES_DB}
+         - REDIS_HOST=redis
+       volumes:
+         - ./logs:/app/logs
+       depends_on:
+         - postgres
+         - redis
+       platform: linux/arm64
+
+     postgres:
+       image: postgres:15
+       environment:
+         - POSTGRES_USER=\${POSTGRES_USER}
+         - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD}
+         - POSTGRES_DB=\${POSTGRES_DB}
+       volumes:
+         - postgres_data:/var/lib/postgresql/data
+       platform: linux/arm64
+       ports:
+         - "5432:5432"
+
+     redis:
+       image: redis:7
+       command: redis-server --requirepass \${REDIS_PASSWORD}
+       volumes:
+         - redis_data:/data
+       platform: linux/arm64
+       ports:
+         - "6379:6379"
+
+   volumes:
+     postgres_data:
+     redis_data:
+   EOL
+   ```
+
+5. **Create API Dockerfile**
+   ```bash
+   cat > Dockerfile.api << EOL
+   FROM python:3.11-slim
+
+   WORKDIR /app
+
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+
+   COPY api/ ./api/
+   COPY shared/ ./shared/
+   COPY .env .
+
+   CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+   EOL
+   ```
+
+6. **Create Scraper Dockerfile**
+   ```bash
+   cat > Dockerfile.scraper << EOL
+   FROM python:3.11-slim
+
+   WORKDIR /app
+
+   RUN apt-get update && \
+       apt-get install -y --no-install-recommends \
+       chromium \
+       chromium-driver \
+       && rm -rf /var/lib/apt/lists/*
+
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+
+   COPY scraper/ ./scraper/
+   COPY shared/ ./shared/
+   COPY .env .
+
+   CMD ["python", "-m", "scraper.scraper_schedule"]
+   EOL
+   ```
+
+7. **Create Requirements File**
+   ```bash
+   cat > requirements.txt << EOL
+   fastapi==0.109.1
+   uvicorn==0.27.0
+   sqlalchemy==2.0.25
+   asyncpg==0.29.0
+   aiohttp==3.9.3
+   beautifulsoup4==4.12.2
+   pydantic==2.6.0
+   pydantic-settings==2.1.0
+   redis==5.0.1
+   apscheduler==3.10.4
+   selenium==4.16.0
+   python-dotenv==1.0.0
+   scipy==1.12.0
+   EOL
+   ```
+
+## 3. Build and Run
+
+1. **Start Docker Services**
+   ```bash
+   # Build and start all services
+   docker-compose up --build -d
+   
+   # Check if all services are running
+   docker-compose ps
+   ```
+
+2. **Initialize Database**
+   ```bash
+   # Create a temporary Python script for database initialization
+   cat > init_db.py << EOL
+   from shared.database import init_db
+   import asyncio
+   asyncio.run(init_db())
+   EOL
+   
+   # Run initialization in API container
+   docker-compose exec api python init_db.py
+   ```
+
+## 4. Verify Setup
+
+1. **Check Service Logs**
+   ```bash
+   # Check API logs
+   docker-compose logs api
+   
+   # Check Scraper logs
+   docker-compose logs scraper
+   ```
+
+2. **Test API Endpoints**
+   - Open browser and visit: `http://localhost:8000/docs`
+   - Or use curl:
+   ```bash
+   # Test health check
+   curl http://localhost:8000/health
+   
+   # Test makes endpoint
+   curl http://localhost:8000/api/v1/makes
+   ```
+
+3. **Check Database**
+   ```bash
+   # Connect to PostgreSQL
+   docker-compose exec postgres psql -U kvd_user -d kvd_auctions
+   
+   # List tables
+   \dt
+   
+   # Exit
+   \q
+   ```
+
+## 5. Development Workflow
+
+1. **Making Changes**
+   - Edit Python files locally
+   - Changes will be reflected automatically due to volume mounting
+   - API has hot-reload enabled
+
+2. **Viewing Logs**
+   ```bash
+   # View logs in real-time
+   docker-compose logs -f
+   ```
+
+3. **Restarting Services**
+   ```bash
+   # Restart single service
+   docker-compose restart api
+   
+   # Restart all services
+   docker-compose restart
+   ```
+
+4. **Stopping Everything**
+   ```bash
+   # Stop all services
+   docker-compose down
+   
+   # Remove volumes too (if needed)
+   docker-compose down -v
+   ```
+
+## Troubleshooting
+
+1. **Container Won't Start**
+   ```bash
+   # Check detailed logs
+   docker-compose logs --tail=100 service_name
+   ```
+
+2. **Database Connection Issues**
+   ```bash
+   # Verify PostgreSQL is running
+   docker-compose ps postgres
+   
+   # Check PostgreSQL logs
+   docker-compose logs postgres
+   ```
+
+3. **Port Conflicts**
+   - If ports 8000 or 5432 are in use, modify the port mappings in docker-compose.yml
+   - Use `lsof -i :8000` to check what's using a port
+
+4. **Reset Everything**
+   ```bash
+   # Stop all containers and remove volumes
+   docker-compose down -v
+   
+   # Remove all project images
+   docker rmi $(docker images -q kvd-auction-tracker*)
+   
+   # Start fresh
+   docker-compose up --build -d
+   ```
+
+## Next Steps
+
+After confirming everything works:
+1. Add test data
+2. Implement frontend
+3. Set up monitoring
+4. Configure automatic backups
+
+Would you like me to help with any of these next steps or clarify any part of the setup process?
