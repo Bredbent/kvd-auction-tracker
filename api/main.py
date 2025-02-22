@@ -2,13 +2,20 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from typing import List, Optional
 from datetime import date, timedelta
 import uvicorn
 from shared.database import get_db, Car  # Changed to import Car instead
 from shared.config import settings
 from api.schemas import CarResponse, Statistics  # We'll update schemas too
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -24,9 +31,14 @@ app.add_middleware(
 @app.get("/api/v1/cars", response_model=List[CarResponse])
 async def get_cars(db: AsyncSession = Depends(get_db)):
     """Get all cars"""
-    result = await db.execute(select(Car))
-    cars = result.scalars().all()
-    return cars
+    try:
+        result = await db.execute(select(Car))
+        cars = result.scalars().all()
+        logger.info(f"Retrieved {len(cars)} cars")  # Add logging
+        return cars
+    except Exception as e:
+        logger.error(f"Error fetching cars: {str(e)}")  # Add error logging
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/cars/{brand}", response_model=List[CarResponse])
 async def get_cars_by_brand(brand: str, db: AsyncSession = Depends(get_db)):
@@ -98,6 +110,22 @@ def calculate_price_trend(cars: List[Car]) -> float:
     
     slope, _, _, _, _ = stats.linregress(dates, prices)
     return slope
+
+@app.delete("/api/v1/cars", response_model=dict)
+async def delete_all_cars(db: AsyncSession = Depends(get_db)):
+    """Delete all cars from the database."""
+    try:
+        # Execute delete statement
+        await db.execute(delete(Car))
+        await db.commit()
+
+        logger.warning("All cars have been deleted from the database.")
+        return {"message": "All cars deleted successfully."}
+
+    except Exception as e:
+        logger.error(f"Error deleting cars: {str(e)}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete cars")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
