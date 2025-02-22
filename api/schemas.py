@@ -1,3 +1,4 @@
+# api/schemas.py
 from pydantic import BaseModel
 from datetime import date
 from typing import Optional, Dict, Any
@@ -7,7 +8,7 @@ class CarResponse(BaseModel):
     model: str
     price: Optional[int]
     mileage: Optional[int]
-    year: int
+    year: Optional[int]  # Changed to Optional
     sale_date: date
     kvd_id: str
     url: str

@@ -160,6 +160,11 @@ class KVDScraper:
         if self.should_skip_auction(kvd_id):
             logger.info(f"Skipping unwanted auction type: {kvd_id}")
             return None
+        
+        # If you keep track of processed auctions, you can skip duplicates:
+        if hasattr(self, 'processed_ids') and kvd_id in self.processed_ids:
+            logger.info(f"Auction {kvd_id} already processed, skipping...")
+            return None
 
         brand, model = self.get_brand_model(kvd_id)
         details = {
@@ -173,9 +178,13 @@ class KVDScraper:
             'year': None
         }
 
+        # Load the page
         self.driver.get(auction_url)
         time.sleep(2)
 
+        # -----------------------------
+        # Extract mileage
+        # -----------------------------
         try:
             mileage_text = self.driver.find_element(By.XPATH, "//span[contains(text(),' mil')]").text
             mileage_match = re.search(r'(\d[\d\s]*)\s*mil', mileage_text.lower())
@@ -187,6 +196,9 @@ class KVDScraper:
             logger.error(f"Error extracting mileage: {e}")
             details['mileage'] = None
 
+        # -----------------------------
+        # Extract price
+        # -----------------------------
         try:
             price_text = self.driver.find_element(By.XPATH, "//span[contains(text(),' kr')]").text
             details['price'] = int(price_text.replace(" kr", "").replace(" ", ""))
@@ -194,15 +206,43 @@ class KVDScraper:
             logger.error(f"Could not extract price for {auction_url}: {e}")
             details['price'] = None
 
+        # -----------------------------
+        # Extract year (combined logic)
+        # -----------------------------
+        # 1) Try your known CSS/XPath for the year:
         try:
-            year_text = self.driver.find_element(By.XPATH, "/html/body/div/div/div[4]/div/div[2]/div/div[3]/div/div[2]/div/div[3]/span[1]/span[1]").text.strip()
+            # Example using CSS Selector:
+            #  .Summary__SpecLabels-sc-f1qdrz-4 > span:nth-child(1) > span:nth-child(1)
+            year_element = self.driver.find_element(
+                By.CSS_SELECTOR,
+                ".Summary__SpecLabels-sc-f1qdrz-4 > span:nth-child(1) > span:nth-child(1)"
+            )
+            year_text = year_element.text.strip()
             details['year'] = int(year_text)
+            logger.info(f"Extracted year directly: {details['year']}")
         except Exception as e:
-            logger.error(f"Error extracting year: {e}")
+            logger.warning(f"Error extracting year via direct selector: {e}")
             details['year'] = None
 
+        # 2) Fallback: If we still don't have a valid integer year, try meta desc
+        if not details['year']:
+            try:
+                meta_desc = self.driver.find_element(By.XPATH, "/html/head/meta[7]").get_attribute("content")
+                if meta_desc:
+                    # Example regex that looks for a plausible 4-digit year:
+                    year_match = re.search(r'\b(19[5-9]\d|20[0-3]\d)\b', meta_desc)
+                    if year_match:
+                        details['year'] = int(year_match.group(1))
+                        logger.info(f"Extracted year from meta description: {details['year']}")
+            except Exception as e:
+                logger.warning(f"Could not parse meta_desc for year for {auction_url}: {e}")
+
+        # At this point, 'details["year"]' is either an int or None
+        if not details['year']:
+            logger.warning(f"Year could not be extracted for {auction_url}")
+
         return details
-    
+
     except Exception as e:
         logger.error(f"Error parsing auction details for {auction_url}: {e}")
         return None

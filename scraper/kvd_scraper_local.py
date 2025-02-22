@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class KVDScraper:
+class KVDScraperLocal:
     def __init__(self):
         self.base_url = "https://www.kvd.se"
         self.closed_auctions_url = f"{self.base_url}/stangda-auktioner"
