@@ -2,32 +2,15 @@ from pydantic import BaseModel
 from datetime import date
 from typing import Optional, Dict, Any
 
-class MakeResponse(BaseModel):
-    id: int
-    name: str
-    
-    class Config:
-        from_attributes = True
-
-class ModelResponse(BaseModel):
-    id: int
-    make_id: int
-    name: str
-    
-    class Config:
-        from_attributes = True
-
-class AuctionResponse(BaseModel):
-    id: int
-    kvd_id: str
-    model_id: int
-    year: int
+class CarResponse(BaseModel):
+    brand: str
+    model: str
+    price: Optional[int]
     mileage: Optional[int]
-    price: int
-    fuel_type: Optional[str]
-    transmission: Optional[str]
+    year: int
     sale_date: date
-    raw_data: Optional[Dict[str, Any]]
+    kvd_id: str
+    url: str
     
     class Config:
         from_attributes = True

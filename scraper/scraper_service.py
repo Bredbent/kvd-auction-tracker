@@ -34,6 +34,21 @@ async def run_at_midnight():
         except Exception as e:
             logger.error(f"Error in scheduled scrape: {e}")
 
+async def run_scraper_service():
+    while True:
+        try:
+            logger.info("Starting scheduled scrape")
+            scraper = KVDScraper()
+            await scraper.run()
+            logger.info("Completed scheduled scrape")
+            
+            # Wait for 1 hour before next run (for testing)
+            await asyncio.sleep(3600)  # or any interval you prefer
+        except Exception as e:
+            logger.error(f"Error in scheduled scrape: {e}")
+            await asyncio.sleep(60)  # Wait a minute before retrying on error
+
 if __name__ == "__main__":
     logger.info("Starting KVD Scraper Service")
-    asyncio.run(run_at_midnight())
+    asyncio.run(run_scraper_service())
+    #asyncio.run(run_at_midnight())

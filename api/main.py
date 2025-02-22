@@ -1,3 +1,4 @@
+# api/main.py
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,9 +6,9 @@ from sqlalchemy import select, func
 from typing import List, Optional
 from datetime import date, timedelta
 import uvicorn
-from shared.database import get_db, Make, Model, Auction
+from shared.database import get_db, Car  # Changed to import Car instead
 from shared.config import settings
-from api.schemas import AuctionResponse, ModelResponse, MakeResponse, Statistics
+from api.schemas import CarResponse, Statistics  # We'll update schemas too
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -20,103 +21,80 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/v1/makes", response_model=List[MakeResponse])
-async def get_makes(db: AsyncSession = Depends(get_db)):
-    """Get all car makes"""
-    result = await db.execute(select(Make))
-    makes = result.scalars().all()
-    return makes
+@app.get("/api/v1/cars", response_model=List[CarResponse])
+async def get_cars(db: AsyncSession = Depends(get_db)):
+    """Get all cars"""
+    result = await db.execute(select(Car))
+    cars = result.scalars().all()
+    return cars
 
-@app.get("/api/v1/makes/{make_id}/models", response_model=List[ModelResponse])
-async def get_models(make_id: int, db: AsyncSession = Depends(get_db)):
-    """Get all models for a specific make"""
-    result = await db.execute(select(Model).where(Model.make_id == make_id))
-    models = result.scalars().all()
-    if not models:
-        raise HTTPException(status_code=404, detail="Make not found")
-    return models
+@app.get("/api/v1/cars/{brand}", response_model=List[CarResponse])
+async def get_cars_by_brand(brand: str, db: AsyncSession = Depends(get_db)):
+    """Get all cars for a specific brand"""
+    result = await db.execute(select(Car).where(Car.brand == brand))
+    cars = result.scalars().all()
+    if not cars:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    return cars
 
-@app.get("/api/v1/models/{model_id}/auctions", response_model=List[AuctionResponse])
-async def get_model_auctions(
-    model_id: int,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get auctions for a specific model with optional date filtering"""
-    query = select(Auction).where(Auction.model_id == model_id)
-    
-    if start_date:
-        query = query.where(Auction.sale_date >= start_date)
-    if end_date:
-        query = query.where(Auction.sale_date <= end_date)
-    
-    result = await db.execute(query)
-    auctions = result.scalars().all()
-    return auctions
-
-@app.get("/api/v1/models/{model_id}/statistics", response_model=Statistics)
+@app.get("/api/v1/statistics/{brand}/{model}", response_model=Statistics)
 async def get_model_statistics(
-    model_id: int,
+    brand: str,
+    model: str,
     period: int = Query(90, description="Period in days for statistics calculation"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get statistics for a specific model"""
+    """Get statistics for a specific brand/model"""
     start_date = date.today() - timedelta(days=period)
     
-    # Get auctions for the period
-    query = select(Auction).where(
-        Auction.model_id == model_id,
-        Auction.sale_date >= start_date
+    query = select(Car).where(
+        Car.brand == brand,
+        Car.model == model,
+        Car.sale_date >= start_date
     )
     result = await db.execute(query)
-    auctions = result.scalars().all()
+    cars = result.scalars().all()
     
-    if not auctions:
-        raise HTTPException(status_code=404, detail="No auctions found for this period")
+    if not cars:
+        raise HTTPException(status_code=404, detail="No cars found for this period")
     
-    # Calculate statistics
-    prices = [a.price for a in auctions]
-    mileages = [a.mileage for a in auctions if a.mileage is not None]
+    prices = [c.price for c in cars if c.price is not None]
+    mileages = [c.mileage for c in cars if c.mileage is not None]
     
     return Statistics(
-        count=len(auctions),
-        avg_price=sum(prices) / len(prices),
-        min_price=min(prices),
-        max_price=max(prices),
+        count=len(cars),
+        avg_price=sum(prices) / len(prices) if prices else 0,
+        min_price=min(prices) if prices else 0,
+        max_price=max(prices) if prices else 0,
         avg_mileage=sum(mileages) / len(mileages) if mileages else None,
-        total_value=sum(prices),
-        price_trend=calculate_price_trend(auctions)
+        total_value=sum(prices) if prices else 0,
+        price_trend=calculate_price_trend(cars)
     )
 
 @app.get("/api/v1/search")
-async def search_auctions(
+async def search_cars(
     query: str,
     limit: int = 10,
     db: AsyncSession = Depends(get_db)
 ):
-    """Search auctions by make or model"""
+    """Search cars by brand or model"""
     search = f"%{query.lower()}%"
     result = await db.execute(
-        select(Auction, Model, Make)
-        .join(Model, Auction.model_id == Model.id)
-        .join(Make, Model.make_id == Make.id)
-        .where(
-            (func.lower(Make.name).like(search)) |
-            (func.lower(Model.name).like(search))
-        )
-        .limit(limit)
+        select(Car).where(
+            (func.lower(Car.brand).like(search)) |
+            (func.lower(Car.model).like(search))
+        ).limit(limit)
     )
-    return result.all()
+    return result.scalars().all()
 
-def calculate_price_trend(auctions: List[Auction]) -> float:
+def calculate_price_trend(cars: List[Car]) -> float:
     """Calculate price trend using linear regression"""
-    if len(auctions) < 2:
+    if len(cars) < 2:
         return 0.0
     
     from scipy import stats
-    dates = [(a.sale_date - auctions[0].sale_date).days for a in auctions]
-    prices = [a.price for a in auctions]
+    dates = [(c.sale_date - cars[0].sale_date).days for c in cars]
+    prices = [c.price for c in cars]
     
     slope, _, _, _, _ = stats.linregress(dates, prices)
     return slope
