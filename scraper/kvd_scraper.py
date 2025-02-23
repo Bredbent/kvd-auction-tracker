@@ -248,27 +248,38 @@ class KVDScraper:
         return None
 
    async def save_auction(self, details: Dict[str, Any], db_session):
-       try:
-           car = Car(
-               kvd_id=details['kvd_id'],
-               brand=details['brand'],
-               model=details['model'],
-               year=details.get('year'),
-               price=details.get('price'),
-               mileage=details.get('mileage'),
-               sale_date=datetime.strptime(details['sale_date'], '%Y-%m-%d').date(),
-               url=details['url']
-           )
-           db_session.add(car)
-           await db_session.commit()
-           
-           self.auctions_data.append(details)
-           self.save_to_csv()
-           
-       except Exception as e:
-           await db_session.rollback()
-           logger.error(f"Error saving auction {details.get('kvd_id')}: {e}")
+    try:
+        # 1) Check if this kvd_id already exists in the DB
+        existing_car_result = await db_session.execute(
+            select(Car).where(Car.kvd_id == details['kvd_id'])
+        )
+        existing_car = existing_car_result.scalars().first()
+        if existing_car:
+            logger.info(f"Car with kvd_id {details['kvd_id']} already exists in DB, skipping insertion.")
+            return  # <--- Early return to avoid duplicate insert
 
+        # 2) If not in DB, create a new record
+        car = Car(
+            kvd_id=details['kvd_id'],
+            brand=details['brand'],
+            model=details['model'],
+            year=details.get('year'),
+            price=details.get('price'),
+            mileage=details.get('mileage'),
+            sale_date=datetime.strptime(details['sale_date'], '%Y-%m-%d').date(),
+            url=details['url']
+        )
+        db_session.add(car)
+        await db_session.commit()
+
+        # 3) Update local CSV data
+        self.auctions_data.append(details)
+        self.save_to_csv()
+
+    except Exception as e:
+        await db_session.rollback()
+        logger.error(f"Error saving auction {details.get('kvd_id')}: {e}")
+        
    def save_to_csv(self):
        try:
            df = pd.DataFrame(self.auctions_data)
