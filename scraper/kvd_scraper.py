@@ -86,6 +86,28 @@ class KVDScraper:
            "nokian-hakkapeliitta",
        ]
        return any(kvd_id.lower().startswith(prefix) for prefix in skip_prefixes)
+   
+
+
+   def sold(self, page_source: str, kvd_id: str) -> bool:
+        """Check if the vehicle is sold by looking for both 'Såld' and 'Reservationspris uppnått'."""
+        
+        soup = BeautifulSoup(page_source, "html.parser")
+
+        # Extract text once for faster checking
+        page_text = soup.get_text()
+
+        # Check for both 'Såld' and 'Reservationspris uppnått' in the page text
+        sold_detected = "Såld" in page_text
+        reservation_detected = "Reservationspris uppnått" in page_text
+
+        if sold_detected and reservation_detected:
+            logger.info(f"Auction {kvd_id} is SOLD (Detected both 'Såld' and 'Reservationspris uppnått')")
+            return True
+
+        logger.info(f"Auction {kvd_id} is NOT sold (Missing 'Såld' or 'Reservationspris uppnått').")
+        return False
+   
 
    def accept_cookies(self):
        try:
@@ -161,9 +183,20 @@ class KVDScraper:
             logger.info(f"Skipping unwanted auction type: {kvd_id}")
             return None
         
-        # If you keep track of processed auctions, you can skip duplicates:
-        if hasattr(self, 'processed_ids') and kvd_id in self.processed_ids:
+        # If already processed, skip
+        if kvd_id in self.processed_ids:
             logger.info(f"Auction {kvd_id} already processed, skipping...")
+            return None
+
+        # Load the auction page ONCE
+        self.driver.get(auction_url)
+        time.sleep(1)  # Reduce unnecessary wait
+
+        page_source = self.driver.page_source  # Get full HTML source
+
+        # Check if the auction is sold (uses soup for faster parsing)
+        if not self.sold(page_source, kvd_id):
+            logger.info(f"Skipping unsold auction {kvd_id}")
             return None
 
         brand, model = self.get_brand_model(kvd_id)
@@ -178,20 +211,26 @@ class KVDScraper:
             'year': None
         }
 
-        # Load the page
-        self.driver.get(auction_url)
-        time.sleep(2)
-
         # -----------------------------
         # Extract mileage
         # -----------------------------
         try:
-            mileage_text = self.driver.find_element(By.XPATH, "//span[contains(text(),' mil')]").text
-            mileage_match = re.search(r'(\d[\d\s]*)\s*mil', mileage_text.lower())
+            mileage_text = self.driver.find_element(By.XPATH, "//span[contains(text(),' mil') or contains(text(),' km')]").text
+            mileage_match = re.search(r'(\d[\d\s]*)\s*(mil|km)', mileage_text.lower())
+
             if mileage_match:
-                details['mileage'] = int(mileage_match.group(1).replace(" ", ""))
+                mileage_value = int(mileage_match.group(1).replace(" ", ""))
+                mileage_unit = mileage_match.group(2)
+
+                if mileage_unit == "mil":
+                    details['mileage'] = mileage_value  # Assuming 'mil' is already in the correct format
+                elif mileage_unit == "km":
+                    details['mileage'] = mileage_value // 10  # Adjust 10km -> 1mil
+
             else:
                 logger.warning(f"No mileage found in element text: {mileage_text}")
+                details['mileage'] = None
+
         except Exception as e:
             logger.error(f"Error extracting mileage: {e}")
             details['mileage'] = None
@@ -207,12 +246,9 @@ class KVDScraper:
             details['price'] = None
 
         # -----------------------------
-        # Extract year (combined logic)
+        # Extract year
         # -----------------------------
-        # 1) Try your known CSS/XPath for the year:
         try:
-            # Example using CSS Selector:
-            #  .Summary__SpecLabels-sc-f1qdrz-4 > span:nth-child(1) > span:nth-child(1)
             year_element = self.driver.find_element(
                 By.CSS_SELECTOR,
                 ".Summary__SpecLabels-sc-f1qdrz-4 > span:nth-child(1) > span:nth-child(1)"
@@ -223,23 +259,6 @@ class KVDScraper:
         except Exception as e:
             logger.warning(f"Error extracting year via direct selector: {e}")
             details['year'] = None
-
-        # 2) Fallback: If we still don't have a valid integer year, try meta desc
-        if not details['year']:
-            try:
-                meta_desc = self.driver.find_element(By.XPATH, "/html/head/meta[7]").get_attribute("content")
-                if meta_desc:
-                    # Example regex that looks for a plausible 4-digit year:
-                    year_match = re.search(r'\b(19[5-9]\d|20[0-3]\d)\b', meta_desc)
-                    if year_match:
-                        details['year'] = int(year_match.group(1))
-                        logger.info(f"Extracted year from meta description: {details['year']}")
-            except Exception as e:
-                logger.warning(f"Could not parse meta_desc for year for {auction_url}: {e}")
-
-        # At this point, 'details["year"]' is either an int or None
-        if not details['year']:
-            logger.warning(f"Year could not be extracted for {auction_url}")
 
         return details
 
@@ -279,7 +298,7 @@ class KVDScraper:
     except Exception as e:
         await db_session.rollback()
         logger.error(f"Error saving auction {details.get('kvd_id')}: {e}")
-        
+
    def save_to_csv(self):
        try:
            df = pd.DataFrame(self.auctions_data)
@@ -290,53 +309,74 @@ class KVDScraper:
        except Exception as e:
            logger.error(f"Error saving to CSV: {e}")
 
+   async def load_kvd_ids_from_db(self) -> set:
+        async with self.async_session() as db_session:
+            result = await db_session.execute(select(Car.kvd_id))
+            # result.all() returns a list of rows, each row is a tuple (kvd_id,)
+            rows = result.all()
+            existing_ids = {row[0] for row in rows}
+            return existing_ids
+        
    async def run(self):
-       try:
-           logger.info(f"Opening {self.closed_auctions_url}")
-           self.driver.get(self.closed_auctions_url)
-           time.sleep(1)
-           
-           self.accept_cookies()
-           time.sleep(1)
-           
-           self.handle_language_popup()
-           time.sleep(1)
-           
-           page = 1
-           new_auctions = 0
-           
-           async with self.async_session() as db_session:
-               while True:
-                   logger.info(f"Processing page {page}")
-                   auction_links = self.get_auction_links()
-                   
-                   if not auction_links:
-                       logger.info("No more auctions found")
-                       break
+    try:
+        logger.info(f"Opening {self.closed_auctions_url}")
+        self.driver.get(self.closed_auctions_url)
+        time.sleep(1)
+        
+        self.accept_cookies()
+        time.sleep(1)
+        
+        self.handle_language_popup()
+        time.sleep(1)
 
-                   for link_data in auction_links:
-                       if link_data['url'].split('/')[-1] not in self.processed_ids:
-                           details = self.parse_auction_details(link_data['url'], link_data['date'])
-                           if details:
-                               await self.save_auction(details, db_session)
-                               self.processed_ids.add(details['kvd_id'])
-                               new_auctions += 1
+        # ------------------------------------------------
+        # Load all existing kvd_ids from the database once
+        # ------------------------------------------------
+        db_ids = await self.load_kvd_ids_from_db()
+        self.processed_ids |= db_ids  # union them with any CSV-loaded IDs
+        logger.info(f"Loaded {len(db_ids)} existing records from DB. "
+                    f"Combined processed set has {len(self.processed_ids)} items.")
+        
+        page = 1
+        new_auctions = 0
 
-                   try:
-                       next_button = self.driver.find_element(By.XPATH, "//a[@rel='next']")
-                       next_button.click()
-                       time.sleep(2)
-                       page += 1
-                   except:
-                       logger.info("No more pages available")
-                       break
+        async with self.async_session() as db_session:
+            while True:
+                logger.info(f"Processing page {page}")
+                auction_links = self.get_auction_links()
 
-           logger.info(f"Scraping completed. Added {new_auctions} new auctions.")
-           
-       except Exception as e:
-           logger.error(f"Error in main scraping routine: {e}")
-       finally:
-           self.driver.quit()
+                if not auction_links:
+                    logger.info("No more auctions found")
+                    break
+
+                for link_data in auction_links:
+                    # We skip if the kvd_id is already in self.processed_ids
+                    kvd_id = link_data['url'].split('/')[-1]
+                    if kvd_id not in self.processed_ids:
+                        details = self.parse_auction_details(link_data['url'], link_data['date'])
+                        if details:
+                            # Only new auctions get inserted
+                            await self.save_auction(details, db_session)
+                            # Mark as processed so we don't re-insert
+                            self.processed_ids.add(details['kvd_id'])
+                            new_auctions += 1
+
+                # Attempt to go to the next page of auctions
+                try:
+                    next_button = self.driver.find_element(By.XPATH, "//a[@rel='next']")
+                    next_button.click()
+                    time.sleep(2)
+                    page += 1
+                except:
+                    logger.info("No more pages available")
+                    break
+
+        logger.info(f"Scraping completed. Added {new_auctions} new auctions.")
+
+    except Exception as e:
+        logger.error(f"Error in main scraping routine: {e}")
+    finally:
+        self.driver.quit()
 
 if __name__ == "__main__":
    scraper = KVDScraper()
