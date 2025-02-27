@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Plot from 'react-plotly.js';
-import { Box, Paper, Typography, CircularProgress, useTheme } from '@mui/material';
+import { Box, Paper, Typography, CircularProgress, useTheme, ToggleButtonGroup, ToggleButton } from '@mui/material';
+import ViewAgendaIcon from '@mui/icons-material/ViewAgenda';
+import ViewDayIcon from '@mui/icons-material/ViewDay';
 import { ChartData, Car, ChartFilters } from '../types';
 
 interface MultiPanelChartProps {
@@ -27,6 +29,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
   const [chartHeight, setChartHeight] = useState(500);
   const [filteredData, setFilteredData] = useState<ChartData[]>([]);
   const [plotRendered, setPlotRendered] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
 
   // Generate a color map for brands
   const brandColors: BrandColor = {};
@@ -134,7 +137,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     setFilteredData(filtered);
   }, [data, filters]);
 
-  // Dynamically adjust chart height based on number of panels
+  // Dynamically adjust chart height based on number of panels and layout mode
   useEffect(() => {
     console.log('Filtered data changed:', filteredData);
     if (filteredData.length > 0) {
@@ -142,16 +145,20 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       const panelsWithData = filteredData.filter(yearData => yearData.data.length > 0).length;
       console.log(`Setting chart height for ${filteredData.length} panels (${panelsWithData} with data)`);
       
-      // Only count panels with data for height calculation
-      // 350px per panel with data, minimum 400px
-      const panelHeight = panelsWithData > 0 ? panelsWithData * 350 : filteredData.length * 350;
-      setChartHeight(Math.max(400, panelHeight));
+      if (layoutMode === 'vertical') {
+        // Vertical layout: 400px per panel with data, minimum 500px
+        const panelHeight = panelsWithData > 0 ? panelsWithData * 400 : filteredData.length * 400;
+        setChartHeight(Math.max(500, panelHeight));
+      } else {
+        // Horizontal layout: fixed height, but taller to accommodate legend
+        setChartHeight(800);
+      }
       setPlotRendered(true);
     } else {
       console.log('No filtered data, setting plotRendered to false');
       setPlotRendered(false);
     }
-  }, [filteredData]);
+  }, [filteredData, layoutMode]);
   
   // Force Plotly to re-render the plot when window is resized
   useEffect(() => {
@@ -241,6 +248,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     
     // Track which entities have been added to the legend
     const addedToLegend = new Set<string>();
+    const isHorizontal = layoutMode === 'horizontal';
     
     // Create a separate trace for each year panel
     filteredData.forEach((yearData, panelIndex) => {
@@ -296,9 +304,21 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           return;
         }
         
-        // Extract price and mileage data, handling nulls - axes have been flipped
-        const xValues = cars.map(car => car.price === null || car.price === undefined ? 0 : car.price);
-        const yValues = cars.map(car => car.mileage === null || car.mileage === undefined ? 0 : car.mileage);
+        // Extract mileage and price data - back to original orientation
+        const xValues = cars.map(car => car.mileage === null || car.mileage === undefined ? 0 : car.mileage);
+        const yValues = cars.map(car => car.price === null || car.price === undefined ? 0 : car.price);
+        
+        // Modern styling for markers
+        const markerStyle = {
+          color: colors[entity],
+          size: 10,
+          opacity: 0.85,
+          line: {
+            color: 'white',
+            width: 1
+          },
+          symbol: 'circle' // consistent circle shape
+        };
         
         // Create the scatter trace - using panel index+1 for axis reference
         const trace = {
@@ -314,15 +334,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           }),
           customdata: cars.map(car => car.id),
           mode: 'markers',
-          marker: {
-            color: colors[entity],
-            size: 10,
-            opacity: 0.7,
-            line: {
-              color: 'white',
-              width: 1
-            }
-          },
+          marker: markerStyle,
           type: 'scatter',
           name: colorBy === 'model' ? `${entity}` : entity, // Just model name if single brand selected
           legendgroup: entity,
@@ -348,9 +360,9 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           );
           
           if (validDataPoints.length >= 3) {
-            // For axes flipping, the X and Y are swapped here as well
-            const validX = validDataPoints.map(car => car.price as number);
-            const validY = validDataPoints.map(car => car.mileage as number);
+            // Back to original orientation
+            const validX = validDataPoints.map(car => car.mileage as number);
+            const validY = validDataPoints.map(car => car.price as number);
             
             // Calculate trendline with simple linear regression (with flipped axes)
             // y = mx + b
@@ -381,7 +393,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
               line: {
                 color: colors[entity],
                 width: 2,
-                dash: 'dash'
+                dash: isHorizontal ? 'solid' : 'dash' // Solid for horizontal, dashed for vertical
               },
               legendgroup: entity,
               xaxis: `x${panelIndex+1}`,
@@ -399,19 +411,20 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           const highlightedCar = cars.find(car => car.id === highlightedCarId);
           if (highlightedCar) {
             const highlightTrace = {
-              // Swap X and Y for the highlighted point as well
-              x: [highlightedCar.price === null || highlightedCar.price === undefined ? 0 : highlightedCar.price],
-              y: [highlightedCar.mileage === null || highlightedCar.mileage === undefined ? 0 : highlightedCar.mileage],
+              // Back to original orientation
+              x: [highlightedCar.mileage === null || highlightedCar.mileage === undefined ? 0 : highlightedCar.mileage],
+              y: [highlightedCar.price === null || highlightedCar.price === undefined ? 0 : highlightedCar.price],
               customdata: [highlightedCar.id],
               mode: 'markers',
               marker: {
                 color: colorBy === 'model' ? colors[highlightedCar.model] : colors[highlightedCar.brand],
-                size: 15,
+                size: 16,
                 opacity: 1,
                 line: {
-                  color: 'black',
+                  color: '#333',
                   width: 2
-                }
+                },
+                symbol: 'circle'
               },
               type: 'scatter',
               name: `Highlighted: ${highlightedCar.brand} ${highlightedCar.model}`,
@@ -448,75 +461,135 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
 
   // Generate layout for multi-panel chart
   const getLayout = useMemo(() => {
-    // Basic layout - only build this when filtered data changes
-    const layout: any = {
-      grid: {
+    // Basic layout that changes based on the layout mode
+    const isVertical = layoutMode === 'vertical';
+    
+    // Define grid layout based on mode
+    let gridConfig;
+    if (isVertical) {
+      // Vertical layout - one column, multiple rows
+      gridConfig = {
         rows: filteredData.length,
         columns: 1,
         pattern: 'independent',
         roworder: 'top to bottom',
-        ygap: 0.2,
-        xgap: 0.1,
+        ygap: 0.12, // Reduced gap for cleaner look
+        xgap: 0.08,
         subplots: filteredData.map((_, i) => `x${i+1}y${i+1}`)
-      },
-      height: chartHeight,
+      };
+    } else {
+      // Horizontal layout - one row, multiple columns
+      gridConfig = {
+        rows: 1,
+        columns: filteredData.length,
+        pattern: 'independent',
+        roworder: 'top to bottom',
+        ygap: 0.12,
+        xgap: 0.08,
+        subplots: filteredData.map((_, i) => `x${i+1}y${i+1}`)
+      };
+    }
+    
+    // Determine legend configuration
+    const legendConfig = {
+      traceorder: 'normal',
+      orientation: isVertical ? (colorEntities.length > 5 ? 'v' : 'h') : 'v',
+      y: isVertical ? (colorEntities.length > 5 ? 1.0 : 1.07) : 1.0,
+      x: isVertical ? (colorEntities.length > 5 ? 1.02 : 0.5) : 1.02,
+      xanchor: isVertical ? (colorEntities.length > 5 ? 'left' : 'center') : 'left',
+      yanchor: 'top',
+      bgcolor: 'rgba(255, 255, 255, 0.9)',
+      bordercolor: '#eaeaea',
+      borderwidth: 1,
+      font: {
+        size: 12,
+        family: '"Roboto", "Helvetica", "Arial", sans-serif'
+      }
+    };
+    
+    const layout: any = {
+      grid: gridConfig,
+      height: chartHeight, 
+      width: isVertical ? undefined : Math.max(800, filteredData.length * 300),
       showlegend: true,
-      autosize: true,
+      autosize: isVertical, // Fixed width for horizontal to ensure adequate space
       responsive: true,
-      legend: {
-        traceorder: 'normal',
-        orientation: colorEntities.length > 6 ? 'v' : 'h', // Vertical legend if many models
-        y: colorEntities.length > 6 ? 1.0 : 1.1,
-        x: colorEntities.length > 6 ? 1.02 : 0.5,
-        xanchor: colorEntities.length > 6 ? 'left' : 'center',
-        yanchor: 'top',
-        bgcolor: 'rgba(255, 255, 255, 0.9)',
-        bordercolor: '#ccc',
-        borderwidth: 1,
-        font: {
-          size: 12
-        }
-      },
+      legend: legendConfig,
       hoverlabel: {
-        bgcolor: '#FFF',
+        bgcolor: 'rgba(255, 255, 255, 0.95)',
         font: {
           size: 12,
-          color: '#000'
+          color: '#333',
+          family: '"Roboto", "Helvetica", "Arial", sans-serif'
         },
-        bordercolor: '#DDD',
+        bordercolor: '#eaeaea',
         align: 'left'
       },
       margin: {
         l: 60,
-        r: 20,
+        r: isVertical ? 30 : 100, // More right margin for horizontal layout with legend
         t: 80,
         b: 60
       },
+      paper_bgcolor: 'rgba(255, 255, 255, 0)',
+      plot_bgcolor: 'rgba(255, 255, 255, 0)',
       hovermode: 'closest',
-      // The xaxis properties will be added for each subplot
       // Main title
       title: {
         text: 'KVD Auctions: Price vs Mileage by Year',
         font: {
-          size: 18,
-          color: '#333'
-        }
+          size: 20,
+          color: '#333',
+          family: '"Roboto", "Helvetica", "Arial", sans-serif',
+          weight: 500
+        },
+        x: 0.5,
+        xanchor: 'center'
       },
       // Ensure plot stays visible
       datarevision: Date.now() // This forces a re-render
     };
     
     return layout;
-  }, [filteredData.length, chartHeight, colorEntities.length]);
+  }, [filteredData.length, chartHeight, colorEntities.length, layoutMode]);
     
   // Add subplots for each year - separate function to avoid mixing with useMemo
   const completeLayout = () => {
     // Start with the base layout
     const layout = {...getLayout};
     
-    // Calculate domain values for each panel
-    const panelHeight = 1.0 / filteredData.length;
-    const padding = 0.05; // 5% padding between panels
+    const isVertical = layoutMode === 'vertical';
+    
+    // Calculate domain values based on layout mode
+    let domains: { [key: string]: { x: [number, number], y: [number, number] } } = {};
+    
+    if (isVertical) {
+      // Vertical layout - calculate domain for each row
+      const panelHeight = 1.0 / filteredData.length;
+      const padding = 0.03; // 3% padding between panels for cleaner look
+      
+      filteredData.forEach((yearData, i) => {
+        const panelBottom = 1.0 - (i + 1) * panelHeight + (padding / 2);
+        const panelTop = 1.0 - i * panelHeight - (padding / 2);
+        domains[`panel${i+1}`] = {
+          x: [0, 1],
+          y: [panelBottom, panelTop]
+        };
+      });
+    } else {
+      // Horizontal layout - calculate domain for each column
+      const panelWidth = 1.0 / filteredData.length;
+      const padding = 0.03; // 3% padding between panels
+      
+      filteredData.forEach((yearData, i) => {
+        const panelLeft = i * panelWidth + (padding / 2);
+        const panelRight = (i + 1) * panelWidth - (padding / 2);
+        domains[`panel${i+1}`] = {
+          x: [panelLeft, panelRight],
+          y: [0, 1]
+        };
+      });
+    }
     
     // Calculate global min/max values for all data points to ensure consistent scaling
     let globalMaxMileage = 0;
@@ -538,6 +611,16 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     globalMaxMileage = Math.ceil(globalMaxMileage * 1.1);
     globalMaxPrice = Math.ceil(globalMaxPrice * 1.1);
     
+    // Format price axis with K for thousands
+    const formatPrice = (val: number) => {
+      if (val >= 1000000) {
+        return (val / 1000000).toFixed(0) + 'M';
+      } else if (val >= 1000) {
+        return (val / 1000).toFixed(0) + 'K';
+      }
+      return val.toString();
+    };
+    
     // Ensure we have reasonable minimum values for scales
     globalMaxMileage = Math.max(globalMaxMileage, 5000);
     globalMaxPrice = Math.max(globalMaxPrice, 100000);
@@ -547,73 +630,107 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     // Add subplots for each year
     filteredData.forEach((yearData, i) => {
       const axisNum = i + 1;
+      const domain = domains[`panel${axisNum}`];
       
-      // Calculate the domain for this panel
-      const panelBottom = 1.0 - (i + 1) * panelHeight + (padding / 2);
-      const panelTop = 1.0 - i * panelHeight - (padding / 2);
+      // Get the domain coordinates based on layout mode
+      console.log(`Panel ${axisNum} (${yearData.year}): domain = x:${domain.x}, y:${domain.y}`);
       
-      console.log(`Panel ${axisNum} (${yearData.year}): domain = [${panelBottom}, ${panelTop}]`);
-      
-      // Switched axes: Y axis is now Mileage, X axis is now Price
-      layout[`xaxis${axisNum}`] = {
-        title: {
-          text: 'Price (SEK)',
-          font: {
-            size: 12
-          }
-        },
-        range: [0, globalMaxPrice], // Set consistent range
-        rangemode: 'nonnegative',
-        tickfont: {
-          size: 10
-        },
-        showticklabels: true,
+      // Shared styles for axes
+      const axisStyles = {
         zeroline: true,
         zerolinewidth: 1,
-        zerolinecolor: '#ddd',
-        gridcolor: '#f5f5f5',
-        fixedrange: false // Allow zooming
+        zerolinecolor: 'rgba(221, 221, 221, 0.5)',
+        gridcolor: 'rgba(245, 245, 245, 0.5)',
+        linecolor: 'rgba(128, 128, 128, 0.2)',
+        showgrid: true,
+        fixedrange: false, // Allow zooming
+        showline: true,
+        mirror: true
       };
       
-      // Add y-axis for each subplot with clear year label and consistent range
-      layout[`yaxis${axisNum}`] = {
+      // X-axis is Mileage
+      layout[`xaxis${axisNum}`] = {
+        ...axisStyles,
         title: {
-          text: `${yearData.year} - Mileage (mil)`,
+          text: isVertical ? 'Mileage (mil)' : '',
+          font: {
+            size: 11,
+            family: '"Roboto", "Helvetica", "Arial", sans-serif',
+            color: '#555'
+          },
+          standoff: 5
+        },
+        range: [0, globalMaxMileage],
+        rangemode: 'nonnegative',
+        tickfont: {
+          size: 10,
+          family: '"Roboto", "Helvetica", "Arial", sans-serif',
+          color: '#777'
+        },
+        tickformat: '.0f',
+        tickmode: 'auto',
+        nticks: 5,
+        showticklabels: true,
+        domain: domain.x,
+        tickangle: 0
+      };
+      
+      // Y-axis is Price
+      layout[`yaxis${axisNum}`] = {
+        ...axisStyles,
+        title: {
+          text: isVertical ? 
+            `${yearData.year} - Price (SEK)` : 
+            `Price (SEK)`,
+          font: {
+            size: isVertical ? 12 : 11,
+            family: '"Roboto", "Helvetica", "Arial", sans-serif',
+            weight: isVertical ? 'bold' : 'normal',
+            color: '#555'
+          },
+          standoff: 5
+        },
+        range: [0, globalMaxPrice],
+        rangemode: 'nonnegative',
+        tickfont: {
+          size: 10,
+          family: '"Roboto", "Helvetica", "Arial", sans-serif',
+          color: '#777'
+        },
+        tickformat: function(val: number) {
+          if (val >= 1000000) return (val/1000000).toFixed(1) + 'M';
+          if (val >= 1000) return (val/1000).toFixed(0) + 'K';
+          return val.toString();
+        },
+        tickmode: 'auto',
+        nticks: 5,
+        showticklabels: true,
+        domain: domain.y
+      };
+      
+      // Add annotations - different positioning based on layout mode
+      layout.annotations = layout.annotations || [];
+      
+      // Year annotation at the top center of each panel in horizontal mode
+      // or as part of the y-axis title in vertical mode
+      if (!isVertical) {
+        layout.annotations.push({
+          text: `${yearData.year}`,
           font: {
             size: 14,
-            weight: 'bold'
-          }
-        },
-        range: [0, globalMaxMileage], // Set consistent range
-        rangemode: 'nonnegative',
-        tickfont: {
-          size: 10
-        },
-        domain: [panelBottom, panelTop],
-        showticklabels: true,
-        zeroline: true,
-        zerolinewidth: 1,
-        zerolinecolor: '#ddd',
-        gridcolor: '#f5f5f5',
-        fixedrange: false // Allow zooming
-      };
-      
-      // Add annotation for each panel to clearly show the year
-      layout.annotations = layout.annotations || [];
-      layout.annotations.push({
-        text: `${yearData.year}`,
-        font: {
-          size: 16,
-          weight: 'bold'
-        },
-        showarrow: false,
-        x: 0.02, // Position at left side
-        y: (panelBottom + panelTop) / 2,
-        xref: 'paper',
-        yref: 'paper',
-        xanchor: 'left',
-        yanchor: 'middle'
-      });
+            family: '"Roboto", "Helvetica", "Arial", sans-serif',
+            weight: 'bold',
+            color: '#333'
+          },
+          showarrow: false,
+          x: (domain.x[0] + domain.x[1]) / 2,
+          y: domain.y[1] + 0.02,
+          xref: 'paper',
+          yref: 'paper',
+          xanchor: 'center',
+          yanchor: 'bottom'
+        });
+      }
       
       // Add "No data available" annotation if this year has no data
       if (yearData.data.length === 0) {
@@ -621,11 +738,12 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           text: 'No Data Available',
           font: {
             size: 14,
+            family: '"Roboto", "Helvetica", "Arial", sans-serif',
             color: '#888'
           },
           showarrow: false,
-          x: 0.5, // Center of panel
-          y: (panelBottom + panelTop) / 2,
+          x: (domain.x[0] + domain.x[1]) / 2,
+          y: (domain.y[0] + domain.y[1]) / 2,
           xref: 'paper',
           yref: 'paper',
           xanchor: 'center',
@@ -709,20 +827,36 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
   return (
     <Paper elevation={2} sx={{ width: '100%', mb: 2 }}>
       <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
-        <Typography variant="h6">
-          {brandName ? 
-            `${brandName} Models: Price vs. Mileage by Year` : 
-            `KVD Auctions: Price vs. Mileage by Year`}
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 500 }}>
+            {brandName ? 
+              `${brandName} Models: Price vs. Mileage by Year` : 
+              `KVD Auctions: Price vs. Mileage by Year`}
+          </Typography>
+          <ToggleButtonGroup
+            value={layoutMode}
+            exclusive
+            onChange={(e, newMode) => newMode && setLayoutMode(newMode)}
+            size="small"
+            aria-label="chart layout"
+          >
+            <ToggleButton value="vertical" aria-label="vertical layout">
+              <ViewDayIcon fontSize="small" />
+            </ToggleButton>
+            <ToggleButton value="horizontal" aria-label="horizontal layout">
+              <ViewAgendaIcon fontSize="small" />
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
         <Typography variant="body2" color="text.secondary">
           {brandName ? 
             `Showing ${colorEntities.length} different models for ${brandName}. Each color represents a different model.` : 
             `Each panel represents a different model year. Colors indicate different brands.`}
-          {" X-axis shows Price (SEK), Y-axis shows Mileage (mil). Dashed lines show trends. Hover over points for details."}
+          {" X-axis shows Mileage (mil), Y-axis shows Price (SEK). Dashed lines show trends. Hover over points for details."}
         </Typography>
       </Box>
       <Box sx={{ width: '100%', overflowX: 'auto' }}>
-        <div ref={plotRef} style={{ width: '100%', minHeight: '500px' }}>
+        <div ref={plotRef} style={{ width: '100%', minHeight: layoutMode === 'vertical' ? '600px' : '800px' }}>
           {/* Always render the Plot component, regardless of plotRendered state */}
           <Plot
             data={getPlotData()}
@@ -731,10 +865,20 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
               responsive: true,
               displayModeBar: true,
               modeBarButtonsToRemove: ['autoScale2d', 'lasso2d', 'select2d'],
-              displaylogo: false
+              displaylogo: false,
+              toImageButtonOptions: {
+                format: 'png',
+                filename: 'kvd_auction_chart',
+                height: chartHeight,
+                width: layoutMode === 'horizontal' ? Math.max(800, filteredData.length * 300) : 1200
+              }
             }}
             onClick={handlePointClick}
-            style={{ width: '100%', height: '100%', minHeight: '500px' }}
+            style={{ 
+              width: '100%', 
+              height: '100%', 
+              minHeight: layoutMode === 'vertical' ? '600px' : '800px' 
+            }}
             useResizeHandler={true}
             revision={Date.now()} // Force Plotly to re-render
           />

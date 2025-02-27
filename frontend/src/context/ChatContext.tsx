@@ -17,7 +17,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     {
       id: uuidv4(),
       role: 'assistant',
-      content: 'Hello! I\'m your car valuation assistant. Ask me about car values or market trends based on our auction data.',
+      content: 'Hello! I\'m your KVD auction assistant. Ask me about car values or market trends based on our auction data.',
       timestamp: new Date(),
     },
   ]);
@@ -72,7 +72,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       {
         id: uuidv4(),
         role: 'assistant',
-        content: 'Hello! I\'m your car valuation assistant. Ask me about car values or market trends based on our auction data.',
+        content: 'Hello! I\'m your KVD auction assistant. Ask me about car values or market trends based on our auction data.',
         timestamp: new Date(),
       },
     ]);
