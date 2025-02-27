@@ -114,10 +114,22 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-devredis123}
       - SECRET_KEY=${SECRET_KEY:-change_me_in_production}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3000"]}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3000","http://localhost:80"]}
     depends_on:
       - postgres
       - redis
+    networks:
+      - kvd_network
+      
+  # Frontend service
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
     networks:
       - kvd_network
 

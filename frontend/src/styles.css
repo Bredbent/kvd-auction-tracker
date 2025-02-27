@@ -1,0 +1,36 @@
+/* Global styles */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Fix for white flash */
+.MuiContainer-root {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Make plots responsive */
+.js-plotly-plot, .plot-container {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 400px !important;
+  display: block !important;
+}
+
+/* Fix for Plotly plots disappearing */
+.plotly-graph-div {
+  min-height: 400px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}

@@ -1,15 +1,17 @@
-# KVD Auction Tracker
+# KVD Auction Explorer
 
-A microservice application that tracks and analyzes closed auctions from KVD.se. The service automatically scrapes auction data and stores it in a PostgreSQL database, making it accessible through a REST API.
+A full-stack application that tracks, analyzes, and visualizes closed auctions from KVD.se. The system combines automated data scraping, a FastAPI backend, and a React frontend with interactive data visualization and AI-powered analysis.
 
 ## Features
 
+### Backend
 - Automated hourly/daily scraping of closed car auctions
 - PostgreSQL database for persistent storage
 - Redis for caching
 - REST API with comprehensive endpoints for data access
 - Repository pattern for clean separation of concerns
 - Docker containerization for easy deployment
+- AI chat endpoint for car valuations (with placeholder for Llama LLM integration)
 - Data extraction includes:
   - Car brand and model
   - Sale price
@@ -18,8 +20,16 @@ A microservice application that tracks and analyzes closed auctions from KVD.se.
   - Sale date
   - Auction ID and URL
 
+### Frontend
+- Multi-panel scatter plot visualization of car prices vs. mileage by year
+- Interactive filters for brands, years, price range, and mileage
+- Comprehensive data table with sorting, filtering, and pagination
+- AI chat assistant for answering questions about car valuations and market trends
+- Responsive design for desktop, tablet, and mobile devices
+
 ## Tech Stack
 
+### Backend
 - Python 3.11
 - FastAPI
 - SQLAlchemy (async)
@@ -29,23 +39,51 @@ A microservice application that tracks and analyzes closed auctions from KVD.se.
 - Redis
 - Docker & Docker Compose
 
+### Frontend
+- React 18
+- TypeScript
+- Material UI component library
+- Plotly.js for data visualization
+- React Query for data fetching and caching
+- Axios for API communication
+
 ## Project Structure
 ```
 kvd-auction-tracker/
-├── src/               # Source code
+├── src/               # Backend source code
 │   ├── api/           # FastAPI application
 │   ├── models/        # Database models
 │   ├── repositories/  # Data repositories
 │   ├── scraper/       # Auction scraper service
 │   ├── services/      # Business logic services
+│   ├── tests/         # Test suite
+│   │   ├── unit/      # Unit tests
+│   │   ├── integration/ # Integration tests
+│   │   └── e2e/       # End-to-end tests
 │   └── utils/         # Shared utilities and config
-├── tests/             # Test suite
-│   ├── unit/          # Unit tests
-│   └── integration/   # Integration tests
+├── frontend/          # Frontend application
+│   ├── src/           # React source code
+│   │   ├── components/# React components
+│   │   ├── context/   # React context providers
+│   │   ├── hooks/     # Custom React hooks
+│   │   ├── pages/     # Page components
+│   │   ├── services/  # API services
+│   │   └── types/     # TypeScript type definitions
+│   ├── public/        # Static assets
+│   └── package.json   # NPM package configuration
 ├── docker/            # Docker-related files
 ├── logs/              # Log files
 ├── config/            # Configuration files
+├── test-results/      # Test results and reports
+│   ├── allure-results/ # Allure test results
+│   ├── allure-report/  # Generated Allure report
+│   └── coverage/      # Coverage reports
 ├── docker-compose.yml # Docker composition
+├── docker-compose.test.yml # Test composition
+├── Dockerfile.api     # Backend API Docker build
+├── Dockerfile.scraper # Scraper Docker build
+├── Dockerfile.frontend # Frontend Docker build
+├── pytest.ini        # Pytest configuration
 └── requirements.txt   # Python dependencies
 ```
 
@@ -114,6 +152,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 2. Install dependencies:
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-test.txt  # Install test dependencies
 pip install -e .  # Install package in development mode
 ```
 
@@ -142,6 +181,55 @@ docker-compose --profile utils up --build scraper-once
 # Run only API
 docker-compose up --build api
 ```
+
+### Running Tests
+
+#### Local Testing
+
+1. Make sure your virtual environment is activated and test dependencies are installed.
+2. Set up the test database:
+
+```bash
+export TEST_DATABASE_URL="postgresql+asyncpg://kvd_user:devpassword123@localhost:5432/kvd_test"
+```
+
+3. Run the tests using the test script:
+
+```bash
+# Make script executable
+chmod +x run_tests.sh
+
+# Run all tests
+./run_tests.sh
+
+# Run only unit tests
+./run_tests.sh unit
+
+# Run only integration tests
+./run_tests.sh integration
+
+# Run only e2e tests
+./run_tests.sh e2e
+```
+
+4. View the test reports:
+   - HTML report: `test-results/report.html`
+   - Coverage report: `test-results/coverage/index.html`
+   - Allure report: `test-results/allure-report/index.html` (requires Allure installation)
+
+#### Docker Testing
+
+Run tests in Docker containers:
+
+```bash
+# Build and run tests
+docker-compose -f docker-compose.test.yml up --build
+
+# Clean up after tests
+docker-compose -f docker-compose.test.yml down
+```
+
+Test reports will be available in the `test-results` directory.
 
 ## Configuration
 

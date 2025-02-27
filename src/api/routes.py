@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Path, status
+from fastapi import APIRouter, HTTPException, Query, Path, status, Body
 from datetime import date, timedelta, datetime
 from typing import List, Optional, Dict, Any
 from src.api.dependencies import DBSession, CarServiceDep
@@ -12,7 +12,7 @@ router = APIRouter()
 @router.get("/cars", status_code=status.HTTP_200_OK)
 async def get_cars(
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(100, ge=1),  # Removed upper limit
     db: DBSession = None,
     car_service: CarServiceDep = None,
 ):
@@ -125,3 +125,72 @@ async def delete_all_cars(
     """Delete all cars from the database"""
     count = await car_service.delete_all_cars(db)
     return {"message": f"Successfully deleted {count} cars"}
+
+# AI Chat endpoint
+@router.post("/chat", status_code=status.HTTP_200_OK)
+async def chat_query(
+    query: Dict[str, str] = Body(...),
+    db: DBSession = None,
+    car_service: CarServiceDep = None,
+):
+    """Process a chat query with the AI assistant"""
+    # Extract the user's query
+    user_query = query.get("query", "")
+    if not user_query:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query cannot be empty"
+        )
+    
+    # For now, we'll implement a simple demo response
+    # In production, this would connect to a local Llama model
+    response = await generate_ai_response(user_query, db, car_service)
+    
+    return {"response": response}
+
+async def generate_ai_response(query: str, db: DBSession, car_service: CarServiceDep) -> str:
+    """
+    Generate a response based on the user's query.
+    
+    This is a placeholder function. In production, this would:
+    1. Call a local Llama LLM service
+    2. Pass the user query and context from the database
+    3. Return the generated response
+    
+    For now, we'll use some predefined responses based on query patterns.
+    """
+    query = query.lower()
+    
+    # Simple pattern matching for demo purposes
+    if "what is" in query and ("worth" in query or "value" in query):
+        # Car valuation query
+        return "Based on our auction data, the value depends on the car's condition, mileage, and year. " + \
+               "For a precise valuation, I'd need more specific details about the car model, year, and mileage. " + \
+               "Generally, recent models with lower mileage command higher prices."
+    
+    elif "average price" in query:
+        # Try to extract brand/model information
+        stats = await car_service.get_statistics(db)
+        return f"The average price across all our auction data is {stats.avg_price:.2f} SEK. " + \
+               f"This is based on {stats.count} auctions recorded in our database."
+    
+    elif "highest resale value" in query:
+        return "Based on our auction data, luxury brands like BMW, Mercedes, and Volvo tend to maintain higher resale values. " + \
+               "However, the actual value depends on factors like model year, mileage, and condition."
+    
+    elif "mileage" in query and "price" in query:
+        return "Generally, cars with lower mileage fetch higher prices at auction. " + \
+               "Our data shows a clear correlation between mileage and price across most brands. " + \
+               "For every additional 10,000 mil, you might expect a 5-15% reduction in price, depending on the model."
+    
+    elif "trend" in query or "market" in query:
+        stats = await car_service.get_statistics(db)
+        trend_description = "rising" if stats.price_trend > 0 else "falling"
+        return f"The current market trend shows prices are {trend_description}. " + \
+               f"Based on our recent auction data, the price trend coefficient is {stats.price_trend:.2f}."
+    
+    else:
+        # Default response
+        return "I'm your car valuation assistant powered by auction data. " + \
+               "You can ask me about car values, price trends, or how factors like mileage affect resale value. " + \
+               "For specific valuations, please provide details about the car's make, model, year, and mileage."
