@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.repositories.car import CarRepository
 from src.api.schemas import CarCreate, CarUpdate, Statistics
@@ -14,8 +14,18 @@ class CarService:
     async def get_car_by_kvd_id(self, db: AsyncSession, kvd_id: str) -> Optional[Any]:
         return await self.repository.get_by_kvd_id(db, kvd_id)
     
-    async def get_cars(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Any]:
-        return await self.repository.get_multi(db, skip=skip, limit=limit)
+    async def get_cars(
+        self, db: AsyncSession, skip: int = 0, limit: int = 100, 
+        brand: Optional[str] = None, model: Optional[str] = None, 
+        year: Optional[int] = None, min_price: Optional[int] = None, 
+        max_price: Optional[int] = None, min_mileage: Optional[int] = None, 
+        max_mileage: Optional[int] = None
+    ) -> List[Any]:
+        return await self.repository.get_filtered(
+            db, skip=skip, limit=limit, brand=brand, model=model, 
+            year=year, min_price=min_price, max_price=max_price,
+            min_mileage=min_mileage, max_mileage=max_mileage
+        )
     
     async def create_car(self, db: AsyncSession, car_data: CarCreate) -> Any:
         car_dict = car_data.model_dump()

@@ -22,7 +22,7 @@ const api = axios.create({
 // Car API functions
 export const getCars = async (
   skip = 0, 
-  limit = 20,
+  limit?: number,
   brand?: string,
   model?: string,
   year?: number,
@@ -31,17 +31,22 @@ export const getCars = async (
   minMileage?: number,
   maxMileage?: number
 ): Promise<CarListResponse> => {
-  const params = { 
-    skip, 
-    limit,
-    ...(brand && { brand }),
-    ...(model && { model }),
-    ...(year && { year }),
-    ...(minPrice && { min_price: minPrice }),
-    ...(maxPrice && { max_price: maxPrice }),
-    ...(minMileage && { min_mileage: minMileage }),
-    ...(maxMileage && { max_mileage: maxMileage })
-  };
+  // Build params object, only including defined parameters
+  const params: Record<string, any> = { skip };
+  
+  // Only add limit if it's defined
+  if (limit !== undefined) {
+    params.limit = limit;
+  }
+  
+  // Add optional filter parameters if they exist
+  if (brand) params.brand = brand;
+  if (model) params.model = model;
+  if (year) params.year = year;
+  if (minPrice !== undefined) params.min_price = minPrice;
+  if (maxPrice !== undefined) params.max_price = maxPrice;
+  if (minMileage !== undefined) params.min_mileage = minMileage;
+  if (maxMileage !== undefined) params.max_mileage = maxMileage;
   
   const response = await api.get<CarListResponse>('/cars', { params });
   return response.data;

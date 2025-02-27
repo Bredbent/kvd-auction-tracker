@@ -51,6 +51,7 @@ export interface SearchParams {
 export interface FilterOptions {
   brands: string[];
   years: number[];
+  models: Record<string, string[]>;
   minPrice?: number;
   maxPrice?: number;
   minMileage?: number;
@@ -62,6 +63,7 @@ export interface ChartFilters {
   selectedYears: number[];
   priceRange: [number, number];
   mileageRange: [number, number];
+  selectedModels: Record<string, string[]>;
 }
 
 export interface ChatMessage {

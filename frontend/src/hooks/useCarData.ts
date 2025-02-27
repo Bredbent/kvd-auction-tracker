@@ -38,13 +38,20 @@ export const useCarData = () => {
           limit: rowsPerPage
         });
       } else {
+        // For brand filtering, we want to get all results from the API
+        // and then apply model filtering client-side
+        const brandToUse = filters.selectedBrands.length === 1 
+          ? filters.selectedBrands[0] 
+          : undefined;
+          
+        // We don't need to pass a limit if we're filtering by brand
+        // The API will now handle returning all matching records
+        
         // Regular API with filters
         response = await getCars(
           page * rowsPerPage,
-          rowsPerPage,
-          filters.selectedBrands.length > 0 && filters.selectedBrands.length < 5 
-            ? filters.selectedBrands[0] 
-            : undefined,
+          brandToUse ? undefined : rowsPerPage, // No limit when filtering by brand
+          brandToUse, // Only filter by brand if exactly one is selected
           undefined, // model - we'll filter client-side 
           filters.selectedYears.length === 1 ? filters.selectedYears[0] : undefined,
           filters.priceRange[0] > 0 ? filters.priceRange[0] : undefined,
@@ -55,21 +62,57 @@ export const useCarData = () => {
       }
       
       // Process the response based on its format
+      let allCars = [];
+      
       if (Array.isArray(response)) {
-        setCars(response);
-        setTotalCount(response.length);
+        allCars = response;
       } else if (response && response.items && Array.isArray(response.items)) {
-        setCars(response.items);
-        setTotalCount(response.total || response.items.length);
-      } else {
+        allCars = response.items;
+      } else if (response && typeof response === 'object') {
         // If we can't identify the format, try to extract cars data
-        console.log('Unexpected API response format:', response);
-        const extractedCars = response ? Object.values(response).filter(item => 
+        console.log('Extracting cars from response:', response);
+        allCars = Object.values(response).filter(item => 
           item && typeof item === 'object' && 'id' in item
-        ) : [];
-        setCars(extractedCars);
-        setTotalCount(extractedCars.length);
+        );
       }
+      
+      console.log(`Received ${allCars.length} cars from API`);
+      
+      // Filter by multiple brands if more than one brand is selected
+      let filteredCars = allCars;
+      
+      if (filters.selectedBrands.length > 1) {
+        filteredCars = filteredCars.filter(car => 
+          filters.selectedBrands.includes(car.brand)
+        );
+        console.log(`After brand filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Apply model filtering based on selected models for each brand
+      if (Object.keys(filters.selectedModels).length > 0) {
+        filteredCars = filteredCars.filter(car => {
+          // Only apply model filtering if this car's brand has models selected
+          if (!filters.selectedModels[car.brand] || filters.selectedModels[car.brand].length === 0) {
+            return true; // Keep all cars of this brand if no specific models are selected
+          }
+          // Keep only if car's model is in the selected models for this brand
+          return filters.selectedModels[car.brand].includes(car.model);
+        });
+        console.log(`After model filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Apply year filtering if multiple years are selected
+      if (filters.selectedYears.length > 1) {
+        filteredCars = filteredCars.filter(car => 
+          filters.selectedYears.includes(car.year)
+        );
+        console.log(`After year filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Set the filtered cars and total count
+      setCars(filteredCars);
+      setTotalCount(filteredCars.length);
+      
     } catch (err) {
       console.error('Error fetching car data:', err);
       setError('Failed to fetch car data. Please try again later.');
@@ -82,7 +125,7 @@ export const useCarData = () => {
 
   // Fetch filtered cars for chart data based on selected filters
   const fetchCarsForChart = useCallback(async () => {
-    // Don't load chart data if too many brands are selected or no brands/years are selected
+    // Don't load chart data if no brands or years are selected
     if (filters.selectedBrands.length === 0 || filters.selectedYears.length === 0) {
       console.log('Skipping chart data load: No brands or years selected');
       setChartData([]);
@@ -93,15 +136,19 @@ export const useCarData = () => {
     setChartLoading(true);
     setError(null);
     try {
-      // Only fetch data for specific brands and years that are selected
-      // Don't use brandToFetch as server-side filtering - get all cars and filter client-side
-      // This ensures we get all the data we need for different selections
+      // For chart data, we always want all matching records
+      // We'll apply all filtering client-side to get the most accurate charts
+      
+      // If we have exactly one brand selected, filter server-side for performance
+      const brandToUse = filters.selectedBrands.length === 1 
+        ? filters.selectedBrands[0] 
+        : undefined;
       
       const response = await getCars(
         0, // skip
-        500, // increased limit to get more data
-        undefined, // get all brands and filter client-side
-        undefined, // model
+        undefined, // No limit - get all data
+        brandToUse, // Apply brand filter on server if only one brand is selected
+        undefined, // model - we'll filter client-side
         undefined, // year - we'll filter client-side
         filters.priceRange[0] > 0 ? filters.priceRange[0] : undefined,
         filters.priceRange[1] < 1000000 ? filters.priceRange[1] : undefined,
@@ -109,47 +156,73 @@ export const useCarData = () => {
         filters.mileageRange[1] < 50000 ? filters.mileageRange[1] : undefined
       );
       
-      // Handle the API response which might not have the expected format
-      let carsData: Car[] = [];
+      // Extract cars from the response
+      let allCars: Car[] = [];
+      
       if (Array.isArray(response)) {
-        // If the response is already an array
-        carsData = response;
+        allCars = response;
       } else if (response && response.items && Array.isArray(response.items)) {
-        // If the response has an items property that is an array
-        carsData = response.items;
-      } else if (response && Array.isArray(Object.values(response))) {
-        // If the response is an object whose values form an array
-        carsData = Object.values(response);
-      } else {
-        // Default to empty array if we can't find car data
-        carsData = [];
+        allCars = response.items;
+      } else if (response && typeof response === 'object') {
+        // If we can't identify the format, try to extract cars data
+        allCars = Object.values(response).filter(item => 
+          item && typeof item === 'object' && 'id' in item
+        );
       }
       
-      // Client-side filtering for multiple brands and years
-      const filteredCars = carsData.filter(car => {
-        // First ensure the car and its required properties exist
-        if (!car || !car.brand || car.year === undefined || car.year === null) {
-          return false;
-        }
-        
-        // Check if brand and year match filters
-        const brandMatch = filters.selectedBrands.includes(car.brand);
-        const yearMatch = filters.selectedYears.includes(car.year);
-        
-        // Handle possible null values for price and mileage
+      console.log(`Chart data: received ${allCars.length} cars from API`);
+      
+      // Apply all filtering client-side
+      let filteredCars = allCars;
+      
+      // Filter by brands
+      if (filters.selectedBrands.length > 0) {
+        filteredCars = filteredCars.filter(car => 
+          filters.selectedBrands.includes(car.brand)
+        );
+        console.log(`Chart data: after brand filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Filter by models
+      if (Object.keys(filters.selectedModels).length > 0) {
+        filteredCars = filteredCars.filter(car => {
+          // Skip if car has no brand
+          if (!car.brand) return false;
+          
+          // If no models selected for this brand, keep all cars of this brand
+          if (!filters.selectedModels[car.brand] || filters.selectedModels[car.brand].length === 0) {
+            return true;
+          }
+          
+          // Only keep if model is in the selected models for this brand
+          return filters.selectedModels[car.brand].includes(car.model);
+        });
+        console.log(`Chart data: after model filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Filter by years
+      if (filters.selectedYears.length > 0) {
+        filteredCars = filteredCars.filter(car => 
+          car.year && filters.selectedYears.includes(car.year)
+        );
+        console.log(`Chart data: after year filtering: ${filteredCars.length} cars`);
+      }
+      
+      // Filter by price range
+      filteredCars = filteredCars.filter(car => {
         const price = car.price !== null && car.price !== undefined ? car.price : 0;
-        const mileage = car.mileage !== null && car.mileage !== undefined ? car.mileage : 0;
-        
-        // Check price and mileage ranges
-        const priceMatch = price >= filters.priceRange[0] && price <= filters.priceRange[1];
-        const mileageMatch = mileage >= filters.mileageRange[0] && mileage <= filters.mileageRange[1];
-        
-        return brandMatch && yearMatch && priceMatch && mileageMatch;
+        return price >= filters.priceRange[0] && price <= filters.priceRange[1];
       });
+      console.log(`Chart data: after price filtering: ${filteredCars.length} cars`);
       
-      console.log('Filtered cars:', filteredCars.length, 'out of', carsData.length);
+      // Filter by mileage range
+      filteredCars = filteredCars.filter(car => {
+        const mileage = car.mileage !== null && car.mileage !== undefined ? car.mileage : 0;
+        return mileage >= filters.mileageRange[0] && mileage <= filters.mileageRange[1];
+      });
+      console.log(`Chart data: after mileage filtering: ${filteredCars.length} cars`);
       
-      // Process data for chart
+      // Process the filtered data for the chart
       processChartData(filteredCars);
     } catch (err) {
       console.error('Error fetching chart data:', err);

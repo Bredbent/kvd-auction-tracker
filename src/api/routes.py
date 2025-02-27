@@ -13,11 +13,25 @@ router = APIRouter()
 async def get_cars(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1),  # Removed upper limit
+    brand: Optional[str] = Query(None),
+    model: Optional[str] = Query(None),
+    year: Optional[int] = Query(None),
+    min_price: Optional[int] = Query(None),
+    max_price: Optional[int] = Query(None),
+    min_mileage: Optional[int] = Query(None),
+    max_mileage: Optional[int] = Query(None),
     db: DBSession = None,
     car_service: CarServiceDep = None,
 ):
-    """Get all cars with pagination"""
-    cars = await car_service.get_cars(db, skip=skip, limit=limit)
+    """Get all cars with pagination and optional filtering"""
+    # If brand is specified, don't apply the limit to get all records for that brand
+    if brand:
+        limit = 9999  # Set a very high limit to effectively get all records
+    
+    cars = await car_service.get_cars(db, skip=skip, limit=limit, 
+                                     brand=brand, model=model, year=year, 
+                                     min_price=min_price, max_price=max_price,
+                                     min_mileage=min_mileage, max_mileage=max_mileage)
     
     # Manually convert SQLAlchemy models to dictionaries
     result = []

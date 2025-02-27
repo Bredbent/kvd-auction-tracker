@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, desc
@@ -86,6 +86,37 @@ class CarRepository(BaseRepository[Car]):
             .offset(skip)
             .limit(limit)
         )
+        return result.scalars().all()
+    
+    async def get_filtered(
+        self, db: AsyncSession, skip: int = 0, limit: int = 100,
+        brand: Optional[str] = None, model: Optional[str] = None,
+        year: Optional[int] = None, min_price: Optional[int] = None,
+        max_price: Optional[int] = None, min_mileage: Optional[int] = None,
+        max_mileage: Optional[int] = None
+    ) -> List[Car]:
+        query = select(Car)
+        
+        # Apply filters if provided
+        if brand:
+            query = query.filter(Car.brand == brand)
+        if model:
+            query = query.filter(Car.model == model)
+        if year:
+            query = query.filter(Car.year == year)
+        if min_price is not None:
+            query = query.filter(Car.price >= min_price)
+        if max_price is not None:
+            query = query.filter(Car.price <= max_price)
+        if min_mileage is not None:
+            query = query.filter(Car.mileage >= min_mileage)
+        if max_mileage is not None:
+            query = query.filter(Car.mileage <= max_mileage)
+        
+        # Apply order by, offset and limit
+        query = query.order_by(desc(Car.sale_date)).offset(skip).limit(limit)
+        
+        result = await db.execute(query)
         return result.scalars().all()
     
     async def delete_all(self, db: AsyncSession) -> int:
