@@ -56,7 +56,9 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       };
     });
     
-    // Go through all cars and put them in the right year bucket
+    // Go through all cars and put them in the right year bucket - first collect all matching cars
+    const matchingCars: Car[] = [];
+    
     data.forEach(yearData => {
       yearData.data.forEach(car => {
         // Skip cars that don't meet basic criteria
@@ -64,9 +66,21 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           return;
         }
         
-        // Skip cars that don't match selected brands and years
-        if (!filters.selectedBrands.includes(car.brand) || !filters.selectedYears.includes(car.year)) {
+        // Skip cars that don't match selected brands
+        if (!filters.selectedBrands.includes(car.brand)) {
           return;
+        }
+        
+        // Check if we need to filter by model
+        const hasModelFilter = filters.selectedBrands.length === 1 && 
+                              filters.selectedModels[filters.selectedBrands[0]]?.length > 0;
+                              
+        // If model filtering is active, check if this car matches a selected model
+        if (hasModelFilter) {
+          const brandModels = filters.selectedModels[filters.selectedBrands[0]] || [];
+          if (!brandModels.includes(car.model)) {
+            return; // Skip this car if its model isn't selected
+          }
         }
         
         // Handle possible null values for price and mileage
@@ -79,17 +93,40 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           return;
         }
         
-        // Add the car to its year bucket
-        if (yearDataMap[car.year]) {
-          yearDataMap[car.year].data.push(car);
-        }
+        // Add to the list of matching cars
+        matchingCars.push(car);
       });
     });
     
-    // Convert to array and sort by year (descending)
-    const filtered = Object.values(yearDataMap)
-      // Keep all years, even empty ones
-      .sort((a, b) => b.year - a.year);  // Sort by year descending
+    // After filtering, organize matching cars into their year buckets
+    matchingCars.forEach(car => {
+      // Create a bucket for this year if it doesn't exist yet
+      if (!yearDataMap[car.year]) {
+        yearDataMap[car.year] = {
+          year: car.year,
+          data: []
+        };
+      }
+      yearDataMap[car.year].data.push(car);
+    });
+    
+    // Filter out years with no data (only when model filtering is active)
+    const hasModelFilter = filters.selectedBrands.length === 1 && 
+                          filters.selectedModels[filters.selectedBrands[0]]?.length > 0;
+    
+    let filtered;
+    if (hasModelFilter) {
+      // When model filtering is active, only keep years with data
+      filtered = Object.values(yearDataMap)
+        .filter(yearData => yearData.data.length > 0)
+        .sort((a, b) => b.year - a.year);
+        
+      console.log("With model filtering, keeping only years with data");
+    } else {
+      // Without model filtering, keep all years
+      filtered = Object.values(yearDataMap)
+        .sort((a, b) => b.year - a.year);
+    }
       
     console.log("Years with data:", 
       filtered.map(y => `${y.year}: ${y.data.length} cars`).join(", "));
@@ -101,9 +138,14 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
   useEffect(() => {
     console.log('Filtered data changed:', filteredData);
     if (filteredData.length > 0) {
-      console.log('Setting chart height for', filteredData.length, 'panels');
-      // 350px per panel, minimum 400px
-      setChartHeight(Math.max(400, filteredData.length * 350));
+      // Count panels with actual data (not empty panels)
+      const panelsWithData = filteredData.filter(yearData => yearData.data.length > 0).length;
+      console.log(`Setting chart height for ${filteredData.length} panels (${panelsWithData} with data)`);
+      
+      // Only count panels with data for height calculation
+      // 350px per panel with data, minimum 400px
+      const panelHeight = panelsWithData > 0 ? panelsWithData * 350 : filteredData.length * 350;
+      setChartHeight(Math.max(400, panelHeight));
       setPlotRendered(true);
     } else {
       console.log('No filtered data, setting plotRendered to false');
@@ -254,9 +296,9 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           return;
         }
         
-        // Extract mileage and price data, handling nulls
-        const xValues = cars.map(car => car.mileage === null || car.mileage === undefined ? 0 : car.mileage);
-        const yValues = cars.map(car => car.price === null || car.price === undefined ? 0 : car.price);
+        // Extract price and mileage data, handling nulls - axes have been flipped
+        const xValues = cars.map(car => car.price === null || car.price === undefined ? 0 : car.price);
+        const yValues = cars.map(car => car.mileage === null || car.mileage === undefined ? 0 : car.mileage);
         
         // Create the scatter trace - using panel index+1 for axis reference
         const trace = {
@@ -306,10 +348,11 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           );
           
           if (validDataPoints.length >= 3) {
-            const validX = validDataPoints.map(car => car.mileage as number);
-            const validY = validDataPoints.map(car => car.price as number);
+            // For axes flipping, the X and Y are swapped here as well
+            const validX = validDataPoints.map(car => car.price as number);
+            const validY = validDataPoints.map(car => car.mileage as number);
             
-            // Calculate trendline with simple linear regression
+            // Calculate trendline with simple linear regression (with flipped axes)
             // y = mx + b
             const n = validX.length;
             const sumX = validX.reduce((a, b) => a + b, 0);
@@ -317,6 +360,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
             const sumXY = validX.reduce((a, b, i) => a + b * validY[i], 0);
             const sumXX = validX.reduce((a, b) => a + b * b, 0);
             
+            // Calculate slope and intercept for the regression line
             const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
             const intercept = (sumY - slope * sumX) / n;
             
@@ -355,8 +399,9 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           const highlightedCar = cars.find(car => car.id === highlightedCarId);
           if (highlightedCar) {
             const highlightTrace = {
-              x: [highlightedCar.mileage === null || highlightedCar.mileage === undefined ? 0 : highlightedCar.mileage],
-              y: [highlightedCar.price === null || highlightedCar.price === undefined ? 0 : highlightedCar.price],
+              // Swap X and Y for the highlighted point as well
+              x: [highlightedCar.price === null || highlightedCar.price === undefined ? 0 : highlightedCar.price],
+              y: [highlightedCar.mileage === null || highlightedCar.mileage === undefined ? 0 : highlightedCar.mileage],
               customdata: [highlightedCar.id],
               mode: 'markers',
               marker: {
@@ -509,15 +554,15 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       
       console.log(`Panel ${axisNum} (${yearData.year}): domain = [${panelBottom}, ${panelTop}]`);
       
-      // Add x-axis for each subplot with consistent range
+      // Switched axes: Y axis is now Mileage, X axis is now Price
       layout[`xaxis${axisNum}`] = {
         title: {
-          text: 'Mileage (mil)',
+          text: 'Price (SEK)',
           font: {
             size: 12
           }
         },
-        range: [0, globalMaxMileage], // Set consistent range
+        range: [0, globalMaxPrice], // Set consistent range
         rangemode: 'nonnegative',
         tickfont: {
           size: 10
@@ -533,13 +578,13 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       // Add y-axis for each subplot with clear year label and consistent range
       layout[`yaxis${axisNum}`] = {
         title: {
-          text: `${yearData.year} - Price (SEK)`,
+          text: `${yearData.year} - Mileage (mil)`,
           font: {
             size: 14,
             weight: 'bold'
           }
         },
-        range: [0, globalMaxPrice], // Set consistent range
+        range: [0, globalMaxMileage], // Set consistent range
         rangemode: 'nonnegative',
         tickfont: {
           size: 10
@@ -628,7 +673,8 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
   console.log('plotRendered:', plotRendered);
   
   // Check if we have valid data to render
-  const hasFilteredData = filteredData && filteredData.length > 0 && filteredData.some(d => d.data && d.data.length > 0);
+  // At least one panel must have data, or we need to show "No data available"
+  const hasFilteredData = filteredData && filteredData.length > 0;
   
   if (!hasFilteredData) {
     return (
@@ -672,7 +718,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           {brandName ? 
             `Showing ${colorEntities.length} different models for ${brandName}. Each color represents a different model.` : 
             `Each panel represents a different model year. Colors indicate different brands.`}
-          {" Dashed lines show price trends. Hover over points for details."}
+          {" X-axis shows Price (SEK), Y-axis shows Mileage (mil). Dashed lines show trends. Hover over points for details."}
         </Typography>
       </Box>
       <Box sx={{ width: '100%', overflowX: 'auto' }}>

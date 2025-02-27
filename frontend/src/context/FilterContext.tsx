@@ -56,6 +56,7 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           brands: availableBrands,
           years: availableYears,
           models: {}, // Initialize with empty models object
+          availableYearsByBrand: {}, // Initialize with empty object
         });
         
         console.log('Filter options loaded:', availableBrands.length, 'brands, years:', availableYears);
@@ -116,17 +117,16 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setFilterOptions(prev => ({
         ...prev,
         availableYearsByBrand: {
-          ...prev.availableYearsByBrand || {},
+          ...prev.availableYearsByBrand,
           [brand]: sortedYears
         }
       }));
       
-      // Update selected years to only include available years
+      // Always select ALL available years for this brand
       setFilters(prev => {
-        const updatedYears = prev.selectedYears.filter(year => sortedYears.includes(year));
         return {
           ...prev,
-          selectedYears: updatedYears.length > 0 ? updatedYears : sortedYears.slice(0, 3) // Default to most recent 3 years if none match
+          selectedYears: sortedYears
         };
       });
       
@@ -253,11 +253,63 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         newSelectedModels[brand] = [...newSelectedModels[brand], model];
       }
       
+      // Fetch available years for the specific model
+      fetchAvailableYearsForModel(brand, model, newSelectedModels[brand]);
+      
       return {
         ...prev,
         selectedModels: newSelectedModels,
       };
     });
+  };
+  
+  // Function to fetch available years for a specific model
+  const fetchAvailableYearsForModel = async (brand: string, model: string, selectedModels: string[]) => {
+    try {
+      // If we've deselected all models, revert to the brand's available years
+      if (selectedModels.length === 0) {
+        const brandYears = filterOptions.availableYearsByBrand[brand] || [];
+        if (brandYears.length > 0) {
+          setFilters(prev => ({
+            ...prev,
+            selectedYears: brandYears
+          }));
+        }
+        return;
+      }
+      
+      // When specific models are selected, we don't need to change the selected years
+      // The chart component will now filter data by model within the selected years
+      // This will show empty panels for years where the model doesn't have data
+      
+      // We'll still fetch the data to log which years actually have data for these models
+      const queryParams = selectedModels.map(m => `model=${encodeURIComponent(m)}`).join('&');
+      const url = `/api/v1/cars?brand=${encodeURIComponent(brand)}&${queryParams}&limit=1000`;
+      
+      console.log(`Fetching years for models: ${selectedModels.join(', ')}`);
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      // Extract unique years from the response
+      const availableYears = new Set<number>();
+      
+      if (Array.isArray(data)) {
+        data.forEach(car => {
+          if (car.year) {
+            availableYears.add(car.year);
+          }
+        });
+      }
+      
+      // Sort years in descending order
+      const sortedYears = Array.from(availableYears).sort((a, b) => b - a);
+      
+      console.log(`Available years for selected models: ${sortedYears.join(', ')}`);
+      console.log(`Keeping all brand years selected, chart will filter by model`);
+      
+    } catch (error) {
+      console.error(`Error fetching years for model:`, error);
+    }
   };
 
   return (

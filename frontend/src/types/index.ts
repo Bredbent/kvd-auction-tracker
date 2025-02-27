@@ -52,7 +52,7 @@ export interface FilterOptions {
   brands: string[];
   years: number[];
   models: Record<string, string[]>;
-  availableYearsByBrand?: Record<string, number[]>;
+  availableYearsByBrand: Record<string, number[]>;
   minPrice?: number;
   maxPrice?: number;
   minMileage?: number;
