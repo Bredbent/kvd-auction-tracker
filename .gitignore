@@ -25,20 +25,48 @@ wheels/
 venv/
 ENV/
 .env
+.venv/
+env/
+env.bak/
+venv.bak/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-workspace
+*.sublime-project
 
 # Project specific
 logs/
 *.log
-kvd_auctions.csv
+src/scraper/kvd_auctions.csv
 data/
 .DS_Store
+.coverage
+htmlcov/
+.pytest_cache/
 
 # Docker
 .docker/
 docker-compose.override.yml
+
+# Database
+*.sqlite
+*.db
+
+# OS specific
+Thumbs.db
+.DS_Store
+.directory
+desktop.ini
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Frontend
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log

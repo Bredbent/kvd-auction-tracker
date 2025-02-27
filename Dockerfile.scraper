@@ -27,7 +27,6 @@ RUN apt-get update && apt-get install -y \
    libxrandr2 \
    xauth \
    xvfb \
-   cron \
    && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -36,20 +35,20 @@ ENV DISPLAY=:99
 ENV CHROME_PATH=/usr/bin/chromium
 
 # Install Python dependencies
+COPY setup.py .
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Setup cron job
-RUN echo "0 0 * * * /usr/local/bin/python -m scraper.kvd_scraper >> /app/logs/cron.log 2>&1" > /etc/cron.d/scraper-cron
-RUN chmod 0644 /etc/cron.d/scraper-cron
-RUN crontab /etc/cron.d/scraper-cron
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install -e .
 
 # Copy source code
-COPY shared/ ./shared/
-COPY scraper/ ./scraper/
-COPY .env .
+COPY src/ ./src/
 
-# Create directories
+# Create directories for data storage
 RUN mkdir -p /data/chrome && mkdir -p /app/logs
 
-CMD ["python", "-m", "scraper.scraper_service"]
+# Script to start Xvfb before running the main application
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python", "-m", "src.scraper.scraper_service"]

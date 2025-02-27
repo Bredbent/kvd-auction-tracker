@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List
 import os
+import json
 
 class Settings(BaseSettings):
     # Database
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     # Redis
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str = "devredis123"  # Added this line
+    REDIS_PASSWORD: str = "devredis123"
     
     # API
     API_V1_STR: str = "/api/v1"
@@ -41,5 +42,15 @@ class Settings(BaseSettings):
     class Config:
         case_sensitive = True
         env_file = ".env"
+        
+        @classmethod
+        def parse_env_var(cls, field_name: str, raw_val: str) -> any:
+            if field_name == "BACKEND_CORS_ORIGINS" and raw_val:
+                try:
+                    return json.loads(raw_val)
+                except json.JSONDecodeError:
+                    # If not a JSON array, treat as comma-separated string
+                    return [origin.strip() for origin in raw_val.split(",")]
+            return raw_val
 
 settings = Settings()
