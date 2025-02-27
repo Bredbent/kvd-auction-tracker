@@ -61,7 +61,7 @@ const FilterPanel: React.FC = () => {
     setFilters,
   } = useFilters();
   
-  // Store expanded accordion state
+  // Store expanded accordion state - 'brand' is expanded by default
   const [expandedAccordion, setExpandedAccordion] = useState<string | false>('brand');
   
   // Handle accordion expansion/collapse
@@ -205,55 +205,44 @@ const FilterPanel: React.FC = () => {
         />
       </Box>
 
-      {/* Brand & Model Filter */}
+      {/* Brand Filter */}
       <Accordion 
         expanded={expandedAccordion === 'brand'} 
         onChange={handleAccordionChange('brand')}
       >
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography variant="subtitle1">
-            Brands & Models ({filters.selectedBrands.length} brands selected)
+            {filters.selectedBrands.length === 0 
+              ? "Select Brand" 
+              : `Brand: ${filters.selectedBrands.join(', ')}`}
           </Typography>
         </AccordionSummary>
         <AccordionDetails>
-          {/* Brand Dropdown */}
+          {/* Brand Dropdown - Single Select */}
           <FormControl fullWidth sx={{ mb: 3 }}>
-            <InputLabel id="brand-select-label">Select Brand(s)</InputLabel>
+            <InputLabel id="brand-select-label">Select Brand</InputLabel>
             <Select
               labelId="brand-select-label"
-              multiple
-              value={filters.selectedBrands}
-              onChange={(event: SelectChangeEvent<string[]>) => {
+              value={filters.selectedBrands.length === 1 ? filters.selectedBrands[0] : ""}
+              onChange={(event: SelectChangeEvent<string>) => {
                 const value = event.target.value;
-                setBrands(typeof value === 'string' ? [value] : value);
+                // Only select one brand at a time
+                if (value) {
+                  setBrands([value]);
+                } else {
+                  setBrands([]);
+                }
               }}
-              input={<OutlinedInput label="Select Brand(s)" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {selected.map((value) => (
-                    <Chip 
-                      key={value} 
-                      label={value} 
-                      onDelete={() => {
-                        const newBrands = filters.selectedBrands.filter(brand => brand !== value);
-                        setBrands(newBrands);
-                      }}
-                      deleteIcon={
-                        <ClearIcon 
-                          onMouseDown={(event) => event.stopPropagation()} 
-                        />
-                      }
-                    />
-                  ))}
-                </Box>
-              )}
+              input={<OutlinedInput label="Select Brand" />}
               MenuProps={MenuProps}
               size="small"
             >
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
               {filterOptions.brands.map((brand) => (
                 <MenuItem key={brand} value={brand}>
-                  <Checkbox checked={filters.selectedBrands.indexOf(brand) > -1} />
-                  <ListItemText primary={brand} />
+                  {brand}
                 </MenuItem>
               ))}
             </Select>
@@ -369,29 +358,104 @@ const FilterPanel: React.FC = () => {
       </Accordion>
 
       {/* Year Filter */}
-      <Accordion defaultExpanded>
+      <Accordion expanded={expandedAccordion === 'year'} onChange={handleAccordionChange('year')}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography variant="subtitle1">
-            Years ({filters.selectedYears.length}/{filterOptions.years.length})
+            Years ({filters.selectedYears.length} selected)
           </Typography>
         </AccordionSummary>
         <AccordionDetails>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-            {filterOptions.years.length > 0 ? (
-              filterOptions.years.map((year) => (
-                <Chip
-                  key={year}
-                  label={year}
-                  onClick={() => toggleYear(year)}
-                  color={filters.selectedYears.includes(year) ? 'primary' : 'default'}
-                  variant={filters.selectedYears.includes(year) ? 'filled' : 'outlined'}
-                  sx={{ m: 0.5 }}
-                />
-              ))
-            ) : (
-              <Typography variant="body2">No years available</Typography>
-            )}
-          </Box>
+          {/* Show different UI based on brand selection */}
+          {filters.selectedBrands.length === 0 ? (
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Select a brand first to see available years
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1, opacity: 0.5 }}>
+                {filterOptions.years.map((year) => (
+                  <Chip
+                    key={year}
+                    label={year}
+                    variant="outlined"
+                    disabled={true}
+                    sx={{ m: 0.5 }}
+                  />
+                ))}
+              </Box>
+            </>
+          ) : (
+            <>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                <Button 
+                  size="small" 
+                  variant="outlined" 
+                  onClick={() => {
+                    // Get available years for selected brand
+                    const availableYears = filters.selectedBrands.length === 1 && 
+                      filterOptions.availableYearsByBrand?.[filters.selectedBrands[0]] || 
+                      filterOptions.years;
+                      
+                    setFilters(prev => ({
+                      ...prev,
+                      selectedYears: availableYears
+                    }));
+                  }}
+                  disabled={
+                    filters.selectedBrands.length === 1 && 
+                    filterOptions.availableYearsByBrand?.[filters.selectedBrands[0]]?.length === 
+                    filters.selectedYears.length
+                  }
+                >
+                  Select All
+                </Button>
+                <Button 
+                  size="small" 
+                  variant="outlined" 
+                  onClick={() => {
+                    setFilters(prev => ({
+                      ...prev,
+                      selectedYears: []
+                    }));
+                  }}
+                  disabled={filters.selectedYears.length === 0}
+                >
+                  Clear All
+                </Button>
+              </Box>
+              
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                {filters.selectedBrands.length === 1 && filterOptions.availableYearsByBrand?.[filters.selectedBrands[0]] ? (
+                  // Show only years available for selected brand
+                  filterOptions.availableYearsByBrand[filters.selectedBrands[0]].length > 0 ? (
+                    filterOptions.availableYearsByBrand[filters.selectedBrands[0]].map((year) => (
+                      <Chip
+                        key={year}
+                        label={year}
+                        onClick={() => toggleYear(year)}
+                        color={filters.selectedYears.includes(year) ? 'primary' : 'default'}
+                        variant={filters.selectedYears.includes(year) ? 'filled' : 'outlined'}
+                        sx={{ m: 0.5 }}
+                      />
+                    ))
+                  ) : (
+                    <Typography variant="body2">No data available for {filters.selectedBrands[0]}</Typography>
+                  )
+                ) : (
+                  // Show all years if no brand selected or multiple brands selected
+                  filterOptions.years.map((year) => (
+                    <Chip
+                      key={year}
+                      label={year}
+                      onClick={() => toggleYear(year)}
+                      color={filters.selectedYears.includes(year) ? 'primary' : 'default'}
+                      variant={filters.selectedYears.includes(year) ? 'filled' : 'outlined'}
+                      sx={{ m: 0.5 }}
+                    />
+                  ))
+                )}
+              </Box>
+            </>
+          )}
         </AccordionDetails>
       </Accordion>
     </Paper>

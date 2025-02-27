@@ -38,14 +38,14 @@ export const useCarData = () => {
           limit: rowsPerPage
         });
       } else {
-        // For brand filtering, we want to get all results from the API
-        // and then apply model filtering client-side
+        // In the new UI, we only allow one brand selection at a time
+        // This simplifies the API call and filtering
         const brandToUse = filters.selectedBrands.length === 1 
           ? filters.selectedBrands[0] 
           : undefined;
           
         // We don't need to pass a limit if we're filtering by brand
-        // The API will now handle returning all matching records
+        // The API will now handle returning all matching records for that brand
         
         // Regular API with filters
         response = await getCars(
@@ -78,15 +78,9 @@ export const useCarData = () => {
       
       console.log(`Received ${allCars.length} cars from API`);
       
-      // Filter by multiple brands if more than one brand is selected
+      // Since we're only allowing single brand selection in the UI now,
+      // we don't need to filter by brand again (API already did that)
       let filteredCars = allCars;
-      
-      if (filters.selectedBrands.length > 1) {
-        filteredCars = filteredCars.filter(car => 
-          filters.selectedBrands.includes(car.brand)
-        );
-        console.log(`After brand filtering: ${filteredCars.length} cars`);
-      }
       
       // Apply model filtering based on selected models for each brand
       if (Object.keys(filters.selectedModels).length > 0) {
@@ -175,12 +169,10 @@ export const useCarData = () => {
       // Apply all filtering client-side
       let filteredCars = allCars;
       
-      // Filter by brands
+      // With single brand selection, API already filtered by brand
+      // so we don't need to do it again if brand is selected
       if (filters.selectedBrands.length > 0) {
-        filteredCars = filteredCars.filter(car => 
-          filters.selectedBrands.includes(car.brand)
-        );
-        console.log(`Chart data: after brand filtering: ${filteredCars.length} cars`);
+        console.log(`Chart data: brand already filtered by API: ${filters.selectedBrands[0]}`);
       }
       
       // Filter by models

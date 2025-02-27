@@ -29,6 +29,7 @@ const initialFilterOptions: FilterOptions = {
   brands: [],
   years: [],
   models: {},
+  availableYearsByBrand: {},
 };
 
 const FilterContext = createContext<FilterContextProps | undefined>(undefined);
@@ -59,12 +60,13 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         
         console.log('Filter options loaded:', availableBrands.length, 'brands, years:', availableYears);
         
-        // Start with some default selections to show data right away
+        // Start with all years selected by default, but no brands
         setFilters(prev => ({
           ...prev,
-          // Select a few default brands and years to show data immediately
-          selectedBrands: availableBrands.slice(0, 3),
-          selectedYears: availableYears.slice(0, 3),
+          // Don't pre-select brands, let user choose
+          selectedBrands: [],
+          // Select all years by default
+          selectedYears: availableYears,
         }));
         
         console.log('Default filters set');
@@ -81,16 +83,83 @@ export const FilterProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const resetFilters = () => {
     setFilters({
       ...initialFilters,
-      selectedBrands: filterOptions.brands.slice(0, 3), // Limit to first 3 brands for better performance
-      selectedYears: filterOptions.years.slice(0, 3),   // Limit to first 3 years for better performance
+      selectedBrands: [], // No brands selected by default
+      selectedYears: filterOptions.years, // All years selected by default
     });
+  };
+
+  // Function to filter years based on available data
+  const fetchYearsForBrand = async (brand: string): Promise<void> => {
+    try {
+      // For now, we'll use getCars with a high limit to get all cars for a brand
+      // In a production environment, you might want a dedicated API endpoint for this
+      const response = await fetch(`/api/v1/cars?brand=${brand}&limit=1000`);
+      const data = await response.json();
+      
+      // Extract unique years from the response
+      const availableYears = new Set<number>();
+      
+      if (Array.isArray(data)) {
+        data.forEach(car => {
+          if (car.year) {
+            availableYears.add(car.year);
+          }
+        });
+      }
+      
+      // Sort years in descending order
+      const sortedYears = Array.from(availableYears).sort((a, b) => b - a);
+      
+      console.log(`Available years for ${brand}:`, sortedYears);
+      
+      // Update filter options with years available for this brand
+      setFilterOptions(prev => ({
+        ...prev,
+        availableYearsByBrand: {
+          ...prev.availableYearsByBrand || {},
+          [brand]: sortedYears
+        }
+      }));
+      
+      // Update selected years to only include available years
+      setFilters(prev => {
+        const updatedYears = prev.selectedYears.filter(year => sortedYears.includes(year));
+        return {
+          ...prev,
+          selectedYears: updatedYears.length > 0 ? updatedYears : sortedYears.slice(0, 3) // Default to most recent 3 years if none match
+        };
+      });
+      
+    } catch (error) {
+      console.error(`Error fetching years for ${brand}:`, error);
+    }
   };
 
   const setBrands = (brands: string[]) => {
     setFilters(prev => ({
       ...prev,
       selectedBrands: brands,
+      // Clear model selection when brand changes
+      selectedModels: brands.length === 0 ? {} : 
+        Object.fromEntries(
+          Object.entries(prev.selectedModels)
+            .filter(([brand]) => brands.includes(brand))
+        )
     }));
+    
+    // If no brands selected, reset to all years
+    if (brands.length === 0) {
+      setFilters(prev => ({
+        ...prev,
+        selectedYears: filterOptions.years
+      }));
+      return;
+    }
+    
+    // If one brand selected, fetch years for that brand
+    if (brands.length === 1) {
+      fetchYearsForBrand(brands[0]);
+    }
     
     // Load models for each selected brand
     brands.forEach(async (brand) => {

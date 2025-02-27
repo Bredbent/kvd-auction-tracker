@@ -43,31 +43,57 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       return;
     }
 
-    // Apply filters
-    const filtered = data
-      .filter(yearData => filters.selectedYears.includes(yearData.year))
-      .map(yearData => {
-        return {
-          ...yearData,
-          data: yearData.data.filter(car => {
-            // First ensure the car and its required properties exist
-            if (!car || !car.brand || car.year === undefined || car.year === null) {
-              return false;
-            }
-            
-            // Handle possible null values for price and mileage
-            const price = car.price !== null && car.price !== undefined ? car.price : 0;
-            const mileage = car.mileage !== null && car.mileage !== undefined ? car.mileage : 0;
-            
-            return filters.selectedBrands.includes(car.brand) &&
-              price >= filters.priceRange[0] &&
-              price <= filters.priceRange[1] &&
-              mileage >= filters.mileageRange[0] &&
-              mileage <= filters.mileageRange[1];
-          })
-        };
+    console.log("Processing chart data for years:", filters.selectedYears);
+    
+    // First, create a structure for each selected year
+    const yearDataMap: Record<number, ChartData> = {};
+    
+    // Initialize structure for each selected year
+    filters.selectedYears.forEach(year => {
+      yearDataMap[year] = {
+        year,
+        data: []
+      };
+    });
+    
+    // Go through all cars and put them in the right year bucket
+    data.forEach(yearData => {
+      yearData.data.forEach(car => {
+        // Skip cars that don't meet basic criteria
+        if (!car || !car.brand || car.year === undefined || car.year === null) {
+          return;
+        }
+        
+        // Skip cars that don't match selected brands and years
+        if (!filters.selectedBrands.includes(car.brand) || !filters.selectedYears.includes(car.year)) {
+          return;
+        }
+        
+        // Handle possible null values for price and mileage
+        const price = car.price !== null && car.price !== undefined ? car.price : 0;
+        const mileage = car.mileage !== null && car.mileage !== undefined ? car.mileage : 0;
+        
+        // Skip cars outside price/mileage range
+        if (price < filters.priceRange[0] || price > filters.priceRange[1] ||
+            mileage < filters.mileageRange[0] || mileage > filters.mileageRange[1]) {
+          return;
+        }
+        
+        // Add the car to its year bucket
+        if (yearDataMap[car.year]) {
+          yearDataMap[car.year].data.push(car);
+        }
       });
-
+    });
+    
+    // Convert to array and sort by year (descending)
+    const filtered = Object.values(yearDataMap)
+      // Keep all years, even empty ones
+      .sort((a, b) => b.year - a.year);  // Sort by year descending
+      
+    console.log("Years with data:", 
+      filtered.map(y => `${y.year}: ${y.data.length} cars`).join(", "));
+    
     setFilteredData(filtered);
   }, [data, filters]);
 
@@ -76,7 +102,8 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     console.log('Filtered data changed:', filteredData);
     if (filteredData.length > 0) {
       console.log('Setting chart height for', filteredData.length, 'panels');
-      setChartHeight(Math.max(400, filteredData.length * 300));
+      // 350px per panel, minimum 400px
+      setChartHeight(Math.max(400, filteredData.length * 350));
       setPlotRendered(true);
     } else {
       console.log('No filtered data, setting plotRendered to false');
@@ -103,54 +130,135 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Assign colors to brands
-  const getBrandData = () => {
-    const allBrands = new Set<string>();
+  // Assign colors to models when a single brand is selected, or to brands otherwise
+  const getColorData = () => {
+    // Check if we have a single brand selected
+    const singleBrandMode = filters.selectedBrands.length === 1;
+    const selectedBrand = singleBrandMode ? filters.selectedBrands[0] : null;
     
-    // Collect all unique brands
-    filteredData.forEach(yearData => {
-      yearData.data.forEach(car => {
-        allBrands.add(car.brand);
+    // We'll either collect models (for single brand) or brands
+    const modelColors: Record<string, string> = {};
+    const allModels = new Set<string>();
+    
+    if (singleBrandMode) {
+      console.log(`Color coding by model for brand: ${selectedBrand}`);
+      
+      // Collect all unique models for the selected brand
+      filteredData.forEach(yearData => {
+        yearData.data.forEach(car => {
+          if (car.brand === selectedBrand) {
+            allModels.add(car.model);
+          }
+        });
       });
-    });
-    
-    // Assign colors
-    Array.from(allBrands).forEach((brand, index) => {
-      brandColors[brand] = colorPalette[index % colorPalette.length];
-    });
-    
-    return { brandColors, allBrands };
+      
+      // Assign colors to models
+      Array.from(allModels).sort().forEach((model, index) => {
+        modelColors[model] = colorPalette[index % colorPalette.length];
+      });
+      
+      console.log(`Assigned colors to ${allModels.size} models`);
+      return { 
+        colorMap: modelColors, 
+        entities: Array.from(allModels), 
+        colorBy: 'model',
+        brandName: selectedBrand
+      };
+    } else {
+      console.log('Color coding by brand (multiple brands selected)');
+      
+      // Collect all unique brands
+      const allBrands = new Set<string>();
+      filteredData.forEach(yearData => {
+        yearData.data.forEach(car => {
+          allBrands.add(car.brand);
+        });
+      });
+      
+      // Assign colors to brands
+      const brandColors: Record<string, string> = {};
+      Array.from(allBrands).sort().forEach((brand, index) => {
+        brandColors[brand] = colorPalette[index % colorPalette.length];
+      });
+      
+      return { 
+        colorMap: brandColors, 
+        entities: Array.from(allBrands),
+        colorBy: 'brand',
+        brandName: null
+      };
+    }
   };
 
-  const { brandColors: colors, allBrands } = getBrandData();
+  const { colorMap: colors, entities: colorEntities, colorBy, brandName } = getColorData();
 
-  // Format data for Plotly - Calculate trendlines for each brand
+  // Format data for Plotly - Calculate trendlines for each entity (brand or model)
   const getPlotData = () => {
-    // Group data by year
+    console.log(`Preparing plot data for ${filteredData.length} years, color by: ${colorBy}`);
     const plotlyData: any[] = [];
     
-    // Create a separate trace for each brand in each year panel
-    filteredData.forEach(yearData => {
-      const brandGroups: { [key: string]: Car[] } = {};
+    // Track which entities have been added to the legend
+    const addedToLegend = new Set<string>();
+    
+    // Create a separate trace for each year panel
+    filteredData.forEach((yearData, panelIndex) => {
+      console.log(`Processing year ${yearData.year} (panel ${panelIndex+1}) with ${yearData.data.length} cars`);
       
-      // Group cars by brand
-      yearData.data.forEach(car => {
-        if (!brandGroups[car.brand]) {
-          brandGroups[car.brand] = [];
+      // Add a "No data" annotation if the year has no data
+      if (yearData.data.length === 0) {
+        // We'll still create an empty scatter plot to maintain the panel
+        const emptyTrace = {
+          x: [],
+          y: [],
+          mode: 'markers',
+          type: 'scatter',
+          name: `No data (${yearData.year})`,
+          xaxis: `x${panelIndex+1}`,
+          yaxis: `y${panelIndex+1}`,
+          showlegend: false
+        };
+        plotlyData.push(emptyTrace);
+        
+        // Return early as there's no data to process for this year
+        return;
+      }
+      
+      // Group cars by either model (for single brand) or brand (for multiple brands)
+      const groups: { [key: string]: Car[] } = {};
+      
+      if (colorBy === 'model') {
+        // We're in single brand mode - group by model
+        yearData.data.forEach(car => {
+          if (car.brand !== brandName) return; // Safety check
+          
+          if (!groups[car.model]) {
+            groups[car.model] = [];
+          }
+          groups[car.model].push(car);
+        });
+      } else {
+        // We're in multi-brand mode - group by brand
+        yearData.data.forEach(car => {
+          if (!groups[car.brand]) {
+            groups[car.brand] = [];
+          }
+          groups[car.brand].push(car);
+        });
+      }
+      
+      // Create a trace for each entity (model or brand) in this year panel
+      Object.entries(groups).forEach(([entity, cars]) => {
+        // Even with just 1 car, we want to show it now
+        if (cars.length === 0) {
+          console.log(`Skipping ${entity} in year ${yearData.year}: no cars`);
+          return;
         }
-        brandGroups[car.brand].push(car);
-      });
-      
-      // Create a trace for each brand
-      Object.entries(brandGroups).forEach(([brand, cars]) => {
-        // Skip if there aren't enough data points for a meaningful scatter plot
-        if (cars.length < 2) return;
         
         // Extract mileage and price data, handling nulls
         const xValues = cars.map(car => car.mileage === null || car.mileage === undefined ? 0 : car.mileage);
         const yValues = cars.map(car => car.price === null || car.price === undefined ? 0 : car.price);
         
-        // Create the scatter trace
+        // Create the scatter trace - using panel index+1 for axis reference
         const trace = {
           x: xValues,
           y: yValues,
@@ -165,7 +273,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           customdata: cars.map(car => car.id),
           mode: 'markers',
           marker: {
-            color: colors[brand],
+            color: colors[entity],
             size: 10,
             opacity: 0.7,
             line: {
@@ -174,14 +282,18 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
             }
           },
           type: 'scatter',
-          name: brand,
-          legendgroup: brand,
-          xaxis: `x`,
-          yaxis: `y${yearData.year - filteredData[0].year + 1}`,
-          showlegend: yearData.year === filteredData[0].year,
+          name: colorBy === 'model' ? `${entity}` : entity, // Just model name if single brand selected
+          legendgroup: entity,
+          xaxis: `x${panelIndex+1}`,
+          yaxis: `y${panelIndex+1}`,
+          showlegend: !addedToLegend.has(entity), // Show in legend if not already added
           hovertemplate: '%{text}<extra></extra>'
         };
         
+        // Mark this entity as added to the legend
+        addedToLegend.add(entity);
+        
+        console.log(`Adding scatter trace for ${entity} in year ${yearData.year}: ${cars.length} cars`);
         plotlyData.push(trace);
         
         // Add trendline if we have enough points (at least 3)
@@ -221,15 +333,15 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
               y: trendlineY,
               mode: 'lines',
               type: 'scatter',
-              name: `${brand} trendline`,
+              name: `${entity} trendline`,
               line: {
-                color: colors[brand],
+                color: colors[entity],
                 width: 2,
                 dash: 'dash'
               },
-              legendgroup: brand,
-              xaxis: `x`,
-              yaxis: `y${yearData.year - filteredData[0].year + 1}`,
+              legendgroup: entity,
+              xaxis: `x${panelIndex+1}`,
+              yaxis: `y${panelIndex+1}`,
               showlegend: false,
               hoverinfo: 'none'
             };
@@ -248,7 +360,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
               customdata: [highlightedCar.id],
               mode: 'markers',
               marker: {
-                color: colors[brand],
+                color: colorBy === 'model' ? colors[highlightedCar.model] : colors[highlightedCar.brand],
                 size: 15,
                 opacity: 1,
                 line: {
@@ -258,9 +370,9 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
               },
               type: 'scatter',
               name: `Highlighted: ${highlightedCar.brand} ${highlightedCar.model}`,
-              legendgroup: brand,
-              xaxis: `x`,
-              yaxis: `y${yearData.year - filteredData[0].year + 1}`,
+              legendgroup: colorBy === 'model' ? highlightedCar.model : highlightedCar.brand,
+              xaxis: `x${panelIndex+1}`,
+              yaxis: `y${panelIndex+1}`,
               showlegend: false,
               hoverinfo: 'skip'
             };
@@ -269,6 +381,21 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
           }
         }
       });
+      
+      // Add "No data available" annotation if no traces were added for this year
+      if (Object.keys(groups).length === 0) {
+        const emptyTrace = {
+          x: [],
+          y: [],
+          mode: 'markers',
+          type: 'scatter',
+          name: `No data (${yearData.year})`,
+          xaxis: `x${panelIndex+1}`,
+          yaxis: `y${panelIndex+1}`,
+          showlegend: false
+        };
+        plotlyData.push(emptyTrace);
+      }
     });
     
     return plotlyData;
@@ -282,7 +409,10 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
         rows: filteredData.length,
         columns: 1,
         pattern: 'independent',
-        roworder: 'top to bottom'
+        roworder: 'top to bottom',
+        ygap: 0.2,
+        xgap: 0.1,
+        subplots: filteredData.map((_, i) => `x${i+1}y${i+1}`)
       },
       height: chartHeight,
       showlegend: true,
@@ -290,10 +420,17 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
       responsive: true,
       legend: {
         traceorder: 'normal',
-        orientation: 'h',
-        y: 1.1,
-        x: 0.5,
-        xanchor: 'center'
+        orientation: colorEntities.length > 6 ? 'v' : 'h', // Vertical legend if many models
+        y: colorEntities.length > 6 ? 1.0 : 1.1,
+        x: colorEntities.length > 6 ? 1.02 : 0.5,
+        xanchor: colorEntities.length > 6 ? 'left' : 'center',
+        yanchor: 'top',
+        bgcolor: 'rgba(255, 255, 255, 0.9)',
+        bordercolor: '#ccc',
+        borderwidth: 1,
+        font: {
+          size: 12
+        }
       },
       hoverlabel: {
         bgcolor: '#FFF',
@@ -311,22 +448,7 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
         b: 60
       },
       hovermode: 'closest',
-      xaxis: {
-        title: {
-          text: 'Mileage (mil)',
-          font: {
-            size: 14
-          }
-        },
-        rangemode: 'tozero',
-        tickfont: {
-          size: 12
-        },
-        zeroline: true,
-        zerolinewidth: 1,
-        zerolinecolor: '#ddd',
-        gridcolor: '#f5f5f5'
-      },
+      // The xaxis properties will be added for each subplot
       // Main title
       title: {
         text: 'KVD Auctions: Price vs Mileage by Year',
@@ -340,33 +462,131 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
     };
     
     return layout;
-  }, [filteredData.length, chartHeight]);
+  }, [filteredData.length, chartHeight, colorEntities.length]);
     
   // Add subplots for each year - separate function to avoid mixing with useMemo
   const completeLayout = () => {
     // Start with the base layout
     const layout = {...getLayout};
     
+    // Calculate domain values for each panel
+    const panelHeight = 1.0 / filteredData.length;
+    const padding = 0.05; // 5% padding between panels
+    
+    // Calculate global min/max values for all data points to ensure consistent scaling
+    let globalMaxMileage = 0;
+    let globalMaxPrice = 0;
+    
+    // Find maximum values across all panels
+    filteredData.forEach(yearData => {
+      yearData.data.forEach(car => {
+        if (car.mileage !== null && car.mileage !== undefined && car.mileage > globalMaxMileage) {
+          globalMaxMileage = car.mileage;
+        }
+        if (car.price !== null && car.price !== undefined && car.price > globalMaxPrice) {
+          globalMaxPrice = car.price;
+        }
+      });
+    });
+    
+    // Add a buffer to make sure points are visible (not at the edge)
+    globalMaxMileage = Math.ceil(globalMaxMileage * 1.1);
+    globalMaxPrice = Math.ceil(globalMaxPrice * 1.1);
+    
+    // Ensure we have reasonable minimum values for scales
+    globalMaxMileage = Math.max(globalMaxMileage, 5000);
+    globalMaxPrice = Math.max(globalMaxPrice, 100000);
+    
+    console.log(`Global max values for consistent scaling - Mileage: ${globalMaxMileage}, Price: ${globalMaxPrice}`);
+    
     // Add subplots for each year
     filteredData.forEach((yearData, i) => {
       const axisNum = i + 1;
-      layout[`yaxis${axisNum === 1 ? '' : axisNum}`] = {
+      
+      // Calculate the domain for this panel
+      const panelBottom = 1.0 - (i + 1) * panelHeight + (padding / 2);
+      const panelTop = 1.0 - i * panelHeight - (padding / 2);
+      
+      console.log(`Panel ${axisNum} (${yearData.year}): domain = [${panelBottom}, ${panelTop}]`);
+      
+      // Add x-axis for each subplot with consistent range
+      layout[`xaxis${axisNum}`] = {
         title: {
-          text: axisNum === 1 ? `Price (SEK) - ${yearData.year}` : `${yearData.year}`,
+          text: 'Mileage (mil)',
           font: {
-            size: 14
+            size: 12
           }
         },
-        rangemode: 'tozero',
+        range: [0, globalMaxMileage], // Set consistent range
+        rangemode: 'nonnegative',
         tickfont: {
-          size: 12
+          size: 10
         },
-        domain: [(filteredData.length - i - 1) / filteredData.length, (filteredData.length - i) / filteredData.length],
+        showticklabels: true,
         zeroline: true,
         zerolinewidth: 1,
         zerolinecolor: '#ddd',
-        gridcolor: '#f5f5f5'
+        gridcolor: '#f5f5f5',
+        fixedrange: false // Allow zooming
       };
+      
+      // Add y-axis for each subplot with clear year label and consistent range
+      layout[`yaxis${axisNum}`] = {
+        title: {
+          text: `${yearData.year} - Price (SEK)`,
+          font: {
+            size: 14,
+            weight: 'bold'
+          }
+        },
+        range: [0, globalMaxPrice], // Set consistent range
+        rangemode: 'nonnegative',
+        tickfont: {
+          size: 10
+        },
+        domain: [panelBottom, panelTop],
+        showticklabels: true,
+        zeroline: true,
+        zerolinewidth: 1,
+        zerolinecolor: '#ddd',
+        gridcolor: '#f5f5f5',
+        fixedrange: false // Allow zooming
+      };
+      
+      // Add annotation for each panel to clearly show the year
+      layout.annotations = layout.annotations || [];
+      layout.annotations.push({
+        text: `${yearData.year}`,
+        font: {
+          size: 16,
+          weight: 'bold'
+        },
+        showarrow: false,
+        x: 0.02, // Position at left side
+        y: (panelBottom + panelTop) / 2,
+        xref: 'paper',
+        yref: 'paper',
+        xanchor: 'left',
+        yanchor: 'middle'
+      });
+      
+      // Add "No data available" annotation if this year has no data
+      if (yearData.data.length === 0) {
+        layout.annotations.push({
+          text: 'No Data Available',
+          font: {
+            size: 14,
+            color: '#888'
+          },
+          showarrow: false,
+          x: 0.5, // Center of panel
+          y: (panelBottom + panelTop) / 2,
+          xref: 'paper',
+          yref: 'paper',
+          xanchor: 'center',
+          yanchor: 'middle'
+        });
+      }
     });
     
     return layout;
@@ -443,9 +663,16 @@ const MultiPanelChart: React.FC<MultiPanelChartProps> = ({
   return (
     <Paper elevation={2} sx={{ width: '100%', mb: 2 }}>
       <Box sx={{ p: 2, borderBottom: `1px solid ${theme.palette.divider}` }}>
-        <Typography variant="h6">KVD Auctions: Price vs. Mileage by Year</Typography>
+        <Typography variant="h6">
+          {brandName ? 
+            `${brandName} Models: Price vs. Mileage by Year` : 
+            `KVD Auctions: Price vs. Mileage by Year`}
+        </Typography>
         <Typography variant="body2" color="text.secondary">
-          Each panel represents a different model year. Dashed lines show price trends. Hover over points for details.
+          {brandName ? 
+            `Showing ${colorEntities.length} different models for ${brandName}. Each color represents a different model.` : 
+            `Each panel represents a different model year. Colors indicate different brands.`}
+          {" Dashed lines show price trends. Hover over points for details."}
         </Typography>
       </Box>
       <Box sx={{ width: '100%', overflowX: 'auto' }}>
