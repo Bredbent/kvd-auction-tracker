@@ -7,10 +7,7 @@ from src.utils.config import settings
 from src.utils.database import init_db
 from src.api.routes import router as api_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Logger is already configured in utils.config
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

@@ -2,18 +2,12 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 import time
+import os
 from src.scraper.kvd_scraper import KVDScraper
-from src.utils.config import settings
+from src.utils.config import settings  # This will ensure logging is configured
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f"logs/scraper_service_{datetime.now().strftime('%Y%m%d')}.log"),
-        logging.StreamHandler()
-    ]
-)
+# Get a logger for this module 
+# Logging is already configured in utils.config
 logger = logging.getLogger(__name__)
 
 

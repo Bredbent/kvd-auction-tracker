@@ -12,11 +12,19 @@ import logging
 import re
 from datetime import datetime
 import os
+import sys
+import importlib.util
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Try to import logging config from src.utils.config if available
+try:
+    from src.utils.config import settings
+except ImportError:
+    # If running standalone, configure logging here
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
 logger = logging.getLogger(__name__)
 
 class KVDScraperLocal:

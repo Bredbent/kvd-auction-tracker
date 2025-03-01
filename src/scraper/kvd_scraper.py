@@ -32,22 +32,13 @@ class KVDScraper:
         self.async_session = sessionmaker(engine, class_=sql_asyncio.AsyncSession)
         self.car_service = CarService()
         
-        # Configure logging
+        # Use existing logger from logging module
+        self.logger = logging.getLogger(__name__)
+        
+        # Create logs directory if it doesn't exist
         log_dir = "logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-            
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
-        
-        file_handler = logging.FileHandler(f"{log_dir}/scraper_{datetime.now().strftime('%Y%m%d')}.log")
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        
-        self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
         
         # Load existing data
         self.load_existing_data()

@@ -2,6 +2,51 @@ from pydantic_settings import BaseSettings
 from typing import Optional, List
 import os
 import json
+import logging
+from datetime import datetime
+import logging.config
+
+
+def setup_logging():
+    """Set up logging configuration for the entire application"""
+    # Ensure logs directory exists
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+        
+    # Configure logging
+    logging_config = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'standard': {
+                'format': '%(asctime)s - %(levelname)s - %(message)s'
+            },
+        },
+        'handlers': {
+            'console': {
+                'level': 'INFO',
+                'class': 'logging.StreamHandler',
+                'formatter': 'standard'
+            },
+            'file': {
+                'level': 'INFO',
+                'class': 'logging.FileHandler',
+                'filename': f"{log_dir}/app_{datetime.now().strftime('%Y%m%d')}.log",
+                'formatter': 'standard'
+            }
+        },
+        'loggers': {
+            '': {  # Root logger
+                'handlers': ['console', 'file'],
+                'level': 'INFO',
+                'propagate': True
+            }
+        }
+    }
+    
+    # Apply configuration
+    logging.config.dictConfig(logging_config)
 
 class Settings(BaseSettings):
     # Database
@@ -53,4 +98,8 @@ class Settings(BaseSettings):
                     return [origin.strip() for origin in raw_val.split(",")]
             return raw_val
 
+# Initialize the settings
 settings = Settings()
+
+# Set up logging on module import
+setup_logging()

@@ -1,12 +1,9 @@
 import asyncio
 import logging
 from src.utils.database import init_db
+from src.utils.config import settings  # This will ensure logging is configured
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Logger is already configured in utils.config
 logger = logging.getLogger(__name__)
 
 async def main():
