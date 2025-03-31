@@ -3,16 +3,16 @@ services:
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER:-kvd_user}
+      - POSTGRES_PASSWORD=devpassword123
+      - POSTGRES_DB=${POSTGRES_DB:-kvd_auctions}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     platform: linux/arm64
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kvd_user} -d ${POSTGRES_DB:-kvd_auctions}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -26,7 +26,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-devredis123}
     networks:
       - kvd_network
 
@@ -37,11 +37,11 @@ services:
       dockerfile: Dockerfile.scraper
     command: python -m src.utils.init_db
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER:-kvd_user}
+      - POSTGRES_PASSWORD=devpassword123
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=${POSTGRES_DB:-kvd_auctions}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,14 +55,14 @@ services:
       dockerfile: Dockerfile.scraper
     command: python -m src.scraper.scraper_service immediate
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER:-kvd_user}
+      - POSTGRES_PASSWORD=devpassword123
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=${POSTGRES_DB:-kvd_auctions}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-devredis123}
     volumes:
       - ./logs:/app/logs
       - ./src/scraper:/app/src/scraper
@@ -79,14 +79,14 @@ services:
       dockerfile: Dockerfile.scraper
     command: python -m src.scraper.scraper_service once
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER:-kvd_user}
+      - POSTGRES_PASSWORD=devpassword123
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=${POSTGRES_DB:-kvd_auctions}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-devredis123}
     volumes:
       - ./logs:/app/logs
     depends_on:
@@ -105,16 +105,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER:-kvd_user}
+      - POSTGRES_PASSWORD=devpassword123
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=${POSTGRES_DB:-kvd_auctions}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - SECRET_KEY=${SECRET_KEY}
-      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-devredis123}
+      - SECRET_KEY=${SECRET_KEY:-change_me_in_production}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3000","http://localhost:80"]}
     depends_on:
       - postgres
       - redis
@@ -133,28 +133,6 @@ services:
     networks:
       - kvd_network
 
-  # Backup service
-  backup:
-    image: postgres:15
-    volumes:
-      - ./backup:/backup
-      - ${NAS_BACKUP_PATH:-/Volumes/FamilyFiles/postgres-backup}:${NAS_BACKUP_PATH:-/Volumes/FamilyFiles/postgres-backup}
-      - ./backup.sh:/backup.sh
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB}
-      - NAS_BACKUP_PATH=${NAS_BACKUP_PATH:-/Volumes/FamilyFiles/postgres-backup}
-      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 0 * * *}
-    command: bash -c "chmod +x /backup.sh && echo 'Setting up scheduled backup with cron...' && (crontab -l 2>/dev/null || echo '') | echo \"${BACKUP_SCHEDULE:-0 0 * * *} /backup.sh >> /backup/cron.log 2>&1\" | crontab - && crond -f"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - kvd_network
-
 volumes:
   postgres_data:
   redis_data:
@@ -162,3 +140,4 @@ volumes:
 networks:
   kvd_network:
     driver: bridge
+  

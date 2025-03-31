@@ -1,0 +1,18 @@
+# Backup service
+  backup:
+    image: postgres:15
+    volumes:
+      - ./backup:/backup
+      - /Volumes/FamilyFiles/postgres-backup:/Volumes/FamilyFiles/postgres-backup
+      - ./backup.sh:/backup.sh
+    environment:
+      - POSTGRES_USER=kvd_user
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=kvd_auctions
+    command: bash -c "chmod +x /backup.sh && echo 'Backup service ready' && sleep infinity"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kvd_network

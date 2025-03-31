@@ -104,7 +104,21 @@ cd kvd-auction-tracker
 2. Create environment file:
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
+# Database settings (required)
+POSTGRES_USER=kvd_user                  # PostgreSQL username
+POSTGRES_PASSWORD=your_secure_password  # PostgreSQL password
+POSTGRES_DB=kvd_auctions                # PostgreSQL database name
+
+# Redis settings (required)
+REDIS_PASSWORD=your_redis_password      # Redis password
+
+# API settings (required)
+SECRET_KEY=your_secret_key              # Secret key for API security
+BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:80"]
+
+# Backup settings (optional, but recommended)
+NAS_BACKUP_PATH=/path/to/your/backup    # Path to your backup location
+BACKUP_SCHEDULE=0 0 * * *               # Cron schedule for backups (default: daily at midnight)
 ```
 
 3. Build and start services:

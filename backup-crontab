@@ -1,0 +1,2 @@
+# Run backup at midnight every day
+0 0 * * * /backup.sh >> /backup/cron.log 2>&1
