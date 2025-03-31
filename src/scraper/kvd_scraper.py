@@ -79,10 +79,38 @@ class KVDScraper:
             self.processed_ids = set()
 
     def get_brand_model(self, kvd_id: str) -> tuple:
-        """Extract brand and model from KVD ID"""
+        """
+        Extract the brand and full model name from kvd_id.
+        The first part becomes brand (lowercased).
+        Everything between the first and last part (excluding the number at the end) becomes the model.
+        
+        Example:
+        "tesla-model-3-performance-awd-245870" would give:
+        brand = "tesla"
+        model = "model-3 performance awd"
+        """
+        # Parse kvd_id to extract brand and full model name
         parts = kvd_id.split('-')
-        brand = parts[0]
-        model = parts[1] if len(parts) > 1 else 'unknown'
+        
+        # Handle edge cases
+        if not parts:
+            return "unknown", "unknown"
+            
+        # First part is the brand
+        brand = parts[0].lower()
+        
+        # Check if the last part is numeric - if so, exclude it
+        last_part_index = -1
+        if parts and parts[-1].isdigit():
+            last_part_index = -2  # Exclude the last element (number)
+        else:
+            last_part_index = -1  # Include everything if the last part isn't numeric
+        
+        # Everything in between first and last part is the model
+        # Convert hyphens to spaces in the model name
+        model_parts = parts[1:last_part_index+1]
+        model = " ".join(model_parts)
+        
         return brand, model
 
     def should_skip_auction(self, kvd_id: str) -> bool:
@@ -105,12 +133,19 @@ class KVDScraper:
         # Check for both 'Såld' and 'Reservationspris uppnått' in the page text
         sold_detected = "Såld" in page_text
         reservation_detected = "Reservationspris uppnått" in page_text
+        fixed_price_detected = "Bilen köptes via fast pris" in page_text
 
         if sold_detected and reservation_detected:
-            self.logger.info(f"Auction {kvd_id} is SOLD (Detected both 'Såld' and 'Reservationspris uppnått')")
+            self.logger.info(f"Auction {kvd_id} is SOLD by auction (Detected both 'Såld' and 'Reservationspris uppnått')")
             return True
+        
+        if sold_detected and fixed_price_detected:
+            self.logger.info(f"Auction {kvd_id} is SOLD by fixed Price (Detected both 'Såld' and 'Bilen köptes via fast pris')")
+            return True
+        
 
-        self.logger.info(f"Auction {kvd_id} is NOT sold (Missing 'Såld' or 'Reservationspris uppnått').")
+        self.logger.info(f"Auction {kvd_id} is NOT sold.")
+        self.logger.info(f"Sold detected: {sold_detected}, Reservation detected: {reservation_detected}, Fixed price detected: {fixed_price_detected}")
         return False
 
     def accept_cookies(self) -> None:

@@ -75,7 +75,7 @@ const ChatBox: React.FC = () => {
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <SmartToyIcon sx={{ mr: 1 }} />
           <Typography variant="subtitle1" fontWeight={600}>
-            Car Valuation Assistant
+            Auction Assistant
           </Typography>
         </Box>
         <Box>
