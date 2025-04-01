@@ -175,8 +175,8 @@ async def chat_query(
         ai_port = os.getenv("AI_ASSISTANT_PORT", "8001")
         ai_url = f"http://{ai_host}:{ai_port}/chat"
         
-        # Try connecting to AI service
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        # Try connecting to AI service with increased timeout
+        async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 # First check if the service is healthy
                 health_response = await client.get(f"http://{ai_host}:{ai_port}/health")
@@ -184,11 +184,11 @@ async def chat_query(
                     logger.error(f"AI service health check failed: {health_response.status_code}")
                     return fallback_response
                 
-                # If healthy, send the actual query
+                # If healthy, send the actual query with longer timeout
                 response = await client.post(
                     ai_url,
                     json={"query": user_query},
-                    timeout=5.0
+                    timeout=60.0
                 )
                 
                 if response.status_code != 200:
@@ -196,6 +196,7 @@ async def chat_query(
                     return fallback_response
                 
                 # Return the AI response
+                logger.info(f"Received response from AI service")
                 return response.json()
             
             except httpx.TimeoutException:

@@ -66,8 +66,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 4G
+          cpus: '6'
+          memory: 6G
 
   # Scraper service - runs immediately and then hourly
   scraper:
@@ -120,7 +120,7 @@ services:
     networks:
       - kvd_network
 
-  # AI assistant service
+# AI assistant service updates
   ai-assistant:
     build:
       context: .
@@ -134,6 +134,7 @@ services:
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-tinyllama}
+      - OLLAMA_TIMEOUT=60        # Added longer timeout
     ports:
       - "8001:8001"
     depends_on:
@@ -145,6 +146,8 @@ services:
       - ./logs:/app/logs
     networks:
       - kvd_network
+    # Adding restart policy to ensure the service restarts if it crashes
+    restart: unless-stopped
 
   # API service
   api:

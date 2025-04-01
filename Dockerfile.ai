@@ -17,12 +17,14 @@ COPY src/utils/__init__.py /app/src/utils/__init__.py
 # Create necessary directories
 RUN mkdir -p logs
 
-# Install minimal dependencies directly
+# Install dependencies
 RUN pip install --no-cache-dir \
     fastapi==0.109.1 \
     uvicorn==0.27.0 \
     httpx==0.25.2 \
-    pydantic==2.6.0
+    pydantic==2.6.0 \
+    sqlalchemy==2.0.25 \
+    psycopg2-binary==2.9.9
 
 # Expose port for AI service
 EXPOSE 8001
