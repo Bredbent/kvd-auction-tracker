@@ -1,0 +1,12 @@
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install curl
+RUN apk add --no-cache curl bash
+
+# Copy the model init script (already made executable locally)
+COPY docker/model-init.sh /app/model-init.sh
+
+# Run the model initialization script
+CMD ["/app/model-init.sh"]

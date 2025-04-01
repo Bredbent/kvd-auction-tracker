@@ -6,6 +6,12 @@ from src.api.schemas import (
     CarResponse, CarCreate, CarUpdate, CarListResponse,
     Statistics, MakeResponse, ModelResponse, SearchParams, ErrorResponse
 )
+import httpx
+import os
+import logging
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -156,55 +162,82 @@ async def chat_query(
             detail="Query cannot be empty"
         )
     
-    # For now, we'll implement a simple demo response
-    # In production, this would connect to a local Llama model
-    response = await generate_ai_response(user_query, db, car_service)
+    # Fallback response if AI service is unavailable
+    fallback_response = {
+        "response": "I'm your car auction assistant, but I'm currently running in fallback mode. "
+                   "Basic auction data is still available in the charts and tables. "
+                   "Please try asking me questions again in a few minutes."
+    }
     
-    return {"response": response}
+    try:
+        # Connect to the AI assistant service
+        ai_host = os.getenv("AI_ASSISTANT_HOST", "ai-assistant")
+        ai_port = os.getenv("AI_ASSISTANT_PORT", "8001")
+        ai_url = f"http://{ai_host}:{ai_port}/chat"
+        
+        # Try connecting to AI service
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            try:
+                # First check if the service is healthy
+                health_response = await client.get(f"http://{ai_host}:{ai_port}/health")
+                if health_response.status_code != 200:
+                    logger.error(f"AI service health check failed: {health_response.status_code}")
+                    return fallback_response
+                
+                # If healthy, send the actual query
+                response = await client.post(
+                    ai_url,
+                    json={"query": user_query},
+                    timeout=5.0
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"AI service returned error: {response.status_code}")
+                    return fallback_response
+                
+                # Return the AI response
+                return response.json()
+            
+            except httpx.TimeoutException:
+                logger.error("AI service request timed out")
+                return fallback_response
+                
+    except Exception as e:
+        logger.error(f"Error connecting to AI service: {str(e)}")
+        return await generate_ai_response(user_query, db, car_service)
 
-async def generate_ai_response(query: str, db: DBSession, car_service: CarServiceDep) -> str:
+# Fallback function for generating responses when the AI service is unavailable
+async def generate_ai_response(query: str, db: DBSession, car_service: Any) -> Dict[str, str]:
     """
     Generate a response based on the user's query.
     
-    This is a placeholder function. In production, this would:
-    1. Call a local Llama LLM service
-    2. Pass the user query and context from the database
-    3. Return the generated response
-    
-    For now, we'll use some predefined responses based on query patterns.
+    This is a fallback function used when the AI service is unavailable.
     """
     query = query.lower()
     
     # Simple pattern matching for demo purposes
     if "what is" in query and ("worth" in query or "value" in query):
         # Car valuation query
-        return "Based on our auction data, the value depends on the car's condition, mileage, and year. " + \
-               "For a precise valuation, I'd need more specific details about the car model, year, and mileage. " + \
-               "Generally, recent models with lower mileage command higher prices."
+        response = "Based on our auction data, the value depends on the car's condition, mileage, and year. " + \
+                  "For a precise valuation, I'd need more specific details about the car model, year, and mileage. " + \
+                  "Generally, recent models with lower mileage command higher prices."
     
     elif "average price" in query:
-        # Try to extract brand/model information
-        stats = await car_service.get_statistics(db)
-        return f"The average price across all our auction data is {stats.avg_price:.2f} SEK. " + \
-               f"This is based on {stats.count} auctions recorded in our database."
+        response = "The AI service is currently unavailable. Please try again later for detailed price analysis."
     
     elif "highest resale value" in query:
-        return "Based on our auction data, luxury brands like BMW, Mercedes, and Volvo tend to maintain higher resale values. " + \
-               "However, the actual value depends on factors like model year, mileage, and condition."
+        response = "The AI service is currently unavailable. Please try again later for resale value analysis."
     
     elif "mileage" in query and "price" in query:
-        return "Generally, cars with lower mileage fetch higher prices at auction. " + \
-               "Our data shows a clear correlation between mileage and price across most brands. " + \
-               "For every additional 10,000 mil, you might expect a 5-15% reduction in price, depending on the model."
+        response = "The AI service is currently unavailable. Please try again later for mileage-price correlation analysis."
     
     elif "trend" in query or "market" in query:
-        stats = await car_service.get_statistics(db)
-        trend_description = "rising" if stats.price_trend > 0 else "falling"
-        return f"The current market trend shows prices are {trend_description}. " + \
-               f"Based on our recent auction data, the price trend coefficient is {stats.price_trend:.2f}."
+        response = "The AI service is currently unavailable. Please try again later for market trend analysis."
     
     else:
         # Default response
-        return "I'm your car valuation assistant powered by auction data. " + \
-               "You can ask me about car values, price trends, or how factors like mileage affect resale value. " + \
-               "For specific valuations, please provide details about the car's make, model, year, and mileage."
+        response = "I'm your car valuation assistant, but I'm currently running in fallback mode with limited capabilities. " + \
+                  "Please try again later when our AI service is available for more detailed answers about car values, " + \
+                  "price trends, or other auction data analysis."
+    
+    return {"response": response}

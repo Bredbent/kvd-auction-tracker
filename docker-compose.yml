@@ -48,6 +48,27 @@ services:
     networks:
       - kvd_network
 
+  # Ollama LLM service - using a smaller model better for Mac M4
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      # Set low context window for better performance on Mac
+      - OLLAMA_CONTEXT_LENGTH=2048
+    ports:
+      - "11434:11434"
+    # Important: No health check to avoid timeouts
+    networks:
+      - kvd_network
+    # We're using CPU only mode, but give it some time to initialize
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
   # Scraper service - runs immediately and then hourly
   scraper:
     build:
@@ -72,30 +93,58 @@ services:
     networks:
       - kvd_network
 
-  # One-time scraper - runs once and exits
-  scraper-once:
+  # Initialize Ollama model with tinyllama (a small model good for Macs)
+  model-init:
+    image: curlimages/curl:latest
+    # Simplified retry approach
+    command: |
+      sh -c '
+      echo "Waiting for Ollama to be ready..."
+      for i in {1..30}; do
+        if curl -s http://ollama:11434/api/tags > /dev/null; then
+          echo "Ollama is ready. Pulling model..."
+          curl -X POST http://ollama:11434/api/pull -d "{\"name\":\"${OLLAMA_MODEL:-tinyllama}\"}"
+          echo "Model initialization completed."
+          exit 0
+        fi
+        echo "Waiting for Ollama API... (attempt $$i/30)"
+        sleep 10
+      done
+      echo "Timed out waiting for Ollama"
+      exit 1
+      '
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-tinyllama}
+    depends_on:
+      - ollama
+    networks:
+      - kvd_network
+
+  # AI assistant service
+  ai-assistant:
     build:
       context: .
-      dockerfile: Dockerfile.scraper
-    command: python -m src.scraper.scraper_service once
+      dockerfile: Dockerfile.ai
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    volumes:
-      - ./logs:/app/logs
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-tinyllama}
+    ports:
+      - "8001:8001"
     depends_on:
-      init-db:
-        condition: service_completed_successfully
+      - ollama
+      - model-init
+      - postgres
+    volumes:
+      - ./src/ai:/app/src/ai
+      - ./logs:/app/logs
     networks:
       - kvd_network
-    profiles:
-      - utils
 
   # API service
   api:
@@ -115,9 +164,12 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - SECRET_KEY=${SECRET_KEY}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
+      - AI_ASSISTANT_HOST=${AI_ASSISTANT_HOST:-ai-assistant}
+      - AI_ASSISTANT_PORT=${AI_ASSISTANT_PORT:-8001}
     depends_on:
       - postgres
       - redis
+      - ai-assistant
     networks:
       - kvd_network
       
@@ -158,6 +210,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:
 
 networks:
   kvd_network:

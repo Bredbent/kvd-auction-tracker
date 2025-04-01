@@ -89,8 +89,17 @@ export const getModels = async (make: string): Promise<ModelResponse[]> => {
 
 // AI Chat API function
 export const sendChatQuery = async (query: string): Promise<AIChatResponse> => {
-  const response = await api.post<AIChatResponse>('/chat', { query });
-  return response.data;
+  try {
+    // Send request to the new AI assistant endpoint
+    const response = await api.post<AIChatResponse>('/chat', { query });
+    return response.data;
+  } catch (error) {
+    console.error('Error sending chat query:', error);
+    // Return a friendly error message if the AI service is unavailable
+    return {
+      response: "I'm sorry, I'm having trouble connecting to the database right now. Please try again in a moment."
+    };
+  }
 };
 
 export default api;

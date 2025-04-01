@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only what we need
+COPY src/ai/simple_main.py /app/src/ai/simple_main.py
+COPY src/ai/__init__.py /app/src/ai/__init__.py
+COPY src/utils/__init__.py /app/src/utils/__init__.py
+
+# Create necessary directories
+RUN mkdir -p logs
+
+# Install minimal dependencies directly
+RUN pip install --no-cache-dir \
+    fastapi==0.109.1 \
+    uvicorn==0.27.0 \
+    httpx==0.25.2 \
+    pydantic==2.6.0
+
+# Expose port for AI service
+EXPOSE 8001
+
+# Run the simple AI service
+CMD ["python", "-m", "uvicorn", "src.ai.simple_main:app", "--host", "0.0.0.0", "--port", "8001"]

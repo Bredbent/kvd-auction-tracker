@@ -1,0 +1,16 @@
+FROM ollama/ollama:latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy the entrypoint script
+COPY docker/ollama-entrypoint.sh /app/entrypoint.sh
+
+# Make the script executable
+RUN chmod +x /app/entrypoint.sh
+
+# Expose Ollama API port
+EXPOSE 11434
+
+# Use our entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
